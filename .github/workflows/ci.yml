@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-selftest:
+    name: Python 自测（${{ matrix.python-version }}）
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.12"]
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 运行自测
+        run: python scripts/selftest.py
+
+      - name: 校验三个示例账本
+        run: |
+          python scripts/check_evidence.py examples/01-new-feature/07-验收回归清单.md
+          python scripts/check_evidence.py examples/02-bug-fix/07-验收回归清单.md
+          python scripts/check_evidence.py examples/03-blocking/07-验收回归清单.md
+
+  markdown-links:
+    name: Markdown 链接
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 检查 Markdown 链接
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --verbose --no-progress --max-retries 2 --timeout 20 './**/*.md'
+          fail: true
+
+  package-limits:
+    name: 文件数与体积
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 检查打包上限
+        run: python scripts/package.py --check
+
+  secret-scan:
+    name: 密钥扫描
+    runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: "8.30.1"
+    steps:
+      - name: 检出完整历史
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 安装 gitleaks
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz -C /tmp gitleaks
+          sudo install /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: 扫描完整历史
+        run: gitleaks detect --source . --redact --verbose --exit-code 1
