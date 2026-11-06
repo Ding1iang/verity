@@ -37,6 +37,7 @@
 | `paths.ledger_root` | 是 | 07 账本根目录，相对项目根 | 检查器会递归扫描其中的 `07-*.md`，并与覆盖总表对账 |
 | `paths.evidence_root` | 是 | 证据文件根目录，相对项目根 | 07 里的证据路径建议相对项目根或账本目录，保持可移植 |
 | `paths.coverage_master` | 否 | 覆盖总表路径，相对项目根 | 仅作记录；命令行参数优先 |
+| `paths.ledger_template` | 否 | 项目自己的 07 账本模板，相对项目根 | 填了它，`init` 会按项目模板生成；留空则用 verity 仓库的八列模板。模板文件必须存在；`check_evidence.py --adapter` 会读取模板里的 marker 判断是否为项目 v1 十列格式 |
 | `device.entry` | 是 | 设备操作入口：项目内脚本路径、工具名或人工操作说明 | 不写序列号、账号、连接地址；不把设备命令抄进 verity |
 | `redaction.rules` | 是 | 脱敏规则数组，每项含 `pattern`（正则）、`replace`、`description` | 证据落盘或提交前按顺序应用 |
 | `redaction.forbidden` | 是 | 绝对不能出现的内容类别列表 | 至少包含密码、令牌、Cookie、私钥、真实用户数据 |
@@ -67,6 +68,15 @@ python3 <verity 仓库>/scripts/check_coverage.py <覆盖总表> \
   --adapter <项目根>/.verity/adapter.json \
   --project-root <项目根>
 ```
+
+项目使用 `paths.ledger_template` 生成 v1 十列账本时，检查单份 07 要带上同一个适配层，让检查器按项目格式和项目根解析证据：
+
+```bash
+python3 <verity 仓库>/scripts/check_evidence.py <07 路径> \
+  --adapter <项目根>/.verity/adapter.json
+```
+
+不带适配层也可以显式写 `--format v1 --root <项目根>`；仓库八列账本继续走默认格式，不需要额外参数。
 
 退出码：`0` 通过；`1` 有问题；`2` 参数或读取错误。
 

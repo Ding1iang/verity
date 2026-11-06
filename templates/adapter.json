@@ -40,7 +40,9 @@
   "paths": {
     "ledger_root": "<07 账本根目录，相对项目根>",
     "evidence_root": "<证据文件根目录，相对项目根>",
-    "coverage_master": "<覆盖总表路径，相对项目根>"
+    "coverage_master": "<覆盖总表路径，相对项目根>",
+    "ledger_template": "",
+    "_ledger_template_comment": "可选：项目自己的 07 账本模板，相对项目根。填了它，init 会按项目模板生成；留空则使用 verity 仓库的八列模板。模板文件必须存在，内容里的 marker 决定 check_evidence.py 的格式。"
   },
   "device": {
     "entry": "<设备操作入口：项目内脚本路径、工具名或人工操作说明>",

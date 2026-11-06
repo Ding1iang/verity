@@ -119,11 +119,13 @@ def read_adapter(adapter_path: Optional[str]) -> tuple[str, Optional[Path]]:
     raw_paths = data.get("paths")
     raw_template = raw_paths.get("ledger_template") if isinstance(raw_paths, dict) else None
     if raw_template is not None:
-        if not isinstance(raw_template, str) or not raw_template.strip():
-            raise ValueError("adapter 的 paths.ledger_template 必须是非空字符串")
-        ledger_template = (project_root / raw_template.strip()).resolve()
-        if not ledger_template.is_file():
-            raise ValueError(f"adapter 指定的账本模板不存在：{ledger_template}")
+        if not isinstance(raw_template, str):
+            raise ValueError("adapter 的 paths.ledger_template 必须是字符串")
+        # 模板字段是可选配置；空字符串等价于未配置，继续用仓库八列模板。
+        if raw_template.strip():
+            ledger_template = (project_root / raw_template.strip()).resolve()
+            if not ledger_template.is_file():
+                raise ValueError(f"adapter 指定的账本模板不存在：{ledger_template}")
     return project, ledger_template
 
 
@@ -321,6 +323,11 @@ def init_task(args: argparse.Namespace) -> int:
         print(f"账本模板：{ledger_template}")
     if not head_ok:
         print("提示：未取到 git HEAD，版本锚点已写“未取到”；请补版本锚点后再开工。")
+    checker = REPO_ROOT / "scripts" / "check_evidence.py"
+    check_command = f"python3 {checker} {target / '07-验收回归清单.md'}"
+    if args.adapter:
+        check_command += f" --adapter {Path(args.adapter).expanduser().resolve()}"
+    print(f"检查：{check_command}")
     print("提示：范围、验收项、判据和证据保持空白；空账本检查会报缺字段，这是预期行为。")
     return 0
 

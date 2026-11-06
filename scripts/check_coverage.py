@@ -250,6 +250,18 @@ def load_adapter(path: Path) -> tuple[Optional[dict], list[Issue]]:
                 severity="warning",
             )
         )
+    paths = data.get("paths")
+    if paths is not None and not isinstance(paths, dict):
+        issues.append(Issue("E_ADAPTER_PATHS", "适配层 paths 必须是对象"))
+    elif isinstance(paths, dict):
+        raw_template = paths.get("ledger_template")
+        if raw_template is not None and not isinstance(raw_template, str):
+            issues.append(
+                Issue(
+                    "E_ADAPTER_LEDGER_TEMPLATE",
+                    "适配层 paths.ledger_template 必须是字符串",
+                )
+            )
     return data, issues
 
 
@@ -314,6 +326,26 @@ def resolve_ledger_root(
                 candidate = project_root / candidate
             return candidate.resolve()
     return None
+
+
+def resolve_ledger_template(
+    adapter_data: Optional[dict], project_root: Path
+) -> Optional[Path]:
+    """读取适配层可选的项目账本模板路径，供覆盖检查使用。
+
+    该字段只是路径声明，不解析模板内容；空字符串、占位符和缺省都表示
+    “使用 verity 仓库自带的八列模板”。路径相对项目根解析。
+    """
+    if not adapter_data:
+        return None
+    paths = adapter_data.get("paths") if isinstance(adapter_data.get("paths"), dict) else {}
+    raw_template = paths.get("ledger_template")
+    if not isinstance(raw_template, str) or is_empty(raw_template):
+        return None
+    candidate = Path(raw_template.strip()).expanduser()
+    if not candidate.is_absolute():
+        candidate = project_root / candidate
+    return candidate.resolve()
 
 
 def check_coverage(
@@ -617,6 +649,17 @@ def run_check(args: argparse.Namespace) -> int:
                 "W_NO_LEDGER_ROOT",
                 "没有配置 07 根目录（适配层 paths.ledger_root 或 --ledger-root），跳过数量对账",
                 severity="warning",
+            )
+        )
+
+    # 项目账本模板是 init 生成 v1 账本的输入；覆盖检查不解析模板内容，
+    # 但必须确认声明的文件真实存在，避免项目侧到 init 时才发现路径写错。
+    ledger_template = resolve_ledger_template(adapter_data, project_root)
+    if ledger_template is not None and not ledger_template.is_file():
+        issues.append(
+            Issue(
+                "E_ADAPTER_LEDGER_TEMPLATE",
+                f"适配层 paths.ledger_template 指向的模板不存在：{ledger_template}",
             )
         )
 
