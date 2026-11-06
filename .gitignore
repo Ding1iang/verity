@@ -1,0 +1,28 @@
+# 本地私有材料：项目专属适配、凭据、真实数据一律不提交
+private/
+.local/
+*.local.*
+*.secret
+*.pem
+*.key
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# 编辑器与 IDE
+.idea/
+.vscode/
+
+# 构建、打包与运行产物
+dist/
+build/
+*.zip
+*.log
+tmp/
