@@ -5,6 +5,8 @@
 - 复核日期：2026-11-07
 - 复核方式：逐份读 07 与证据；重跑 `check_evidence --strict`、`check_coverage`、`check-workflow-consistency`、`check-coverage-matrix`；复算 HAP SHA-256；核对临时 worktree 的 HEAD/status；从私有仓库重新克隆 v1.0.0 并复跑 selftest/package/anti_examples；核对 GitHub API 的仓库、Release 与 CI 状态。
 
+> T5b 复审更新（2026-11-07）：见第七节；最新交付结论为 **未交付（阻塞）**；上一轮“未交付（失败）”保留为历史判定。
+
 ## 结论
 
 **未交付（失败）。**
@@ -86,3 +88,63 @@ T4 的过程记录仍有缺口：两份 `metrics.md` 都没有“新 Agent 无�
 4. 复跑 `check_evidence --strict`、`check_coverage`、`check-workflow-consistency`、`test-all --no-l3`，再交独立复核。
 
 负责人按上表执行；P1-1/P1-2 未闭合前，不得对外宣称 v1.0“真实可用”。
+
+## 七、T5b 复审（2026-11-07 01:20）
+
+- 复审范围：2026-11-06 全量 8 批 07/证据、覆盖总表、两个 T4 试点、导入与响应式修复证据、verity v1.0.0 复核记录。
+- 复审方式：只读逐份核对 07/证据/路径；重跑 `check_coverage.py`、8 批 `check_evidence.py --strict`、响应式项目 `check-acceptance-evidence.mjs`；实读 PDF 渲染图、坏 Markdown 报错截图、DB 前后计数、AC-04/AC-05 读数；核对 T4 两份 07、HAP 哈希、run report 与任务卡锚点。
+- 复审结论：**未交付（阻塞）**。8 批账本 8/8 已覆盖，7 批通过、0 批失败、1 批（响应式/无障碍/性能）未交付（阻塞）；导入导出/PDF 已由 6/6 通过；T4 两份 07 均 4/4 通过。阻塞项是设备能力缺失，不是产品失败，也不能写成通过。
+
+### 7.1 8 批与门禁
+
+| 批次 | 07 结论 | 复审 | 关键依据 |
+|---|---|---|---|
+| 加密回收站 | 通过 7/7 | 通过 | 3aad84de；加密后 DB 无明文，错密码提示正确，回收站恢复仍加密，彻底删除无残留 |
+| 启动与数据 | 通过 5/5 | 通过 | 706a1d6f；HAP 7e32cc8b…；T0 已改 3aad84de；AC-05 已补 `AC-05-after-restart.txt` 的 `integrity=ok`、`has_UNSAVED2=0` |
+| 搜索收藏标签 | 通过 5/5 | 通过 | 3aad84de；搜索、收藏、标签入口与 DB 读数一致 |
+| 日历待办 | 通过 6/6 | 通过 | 3aad84de；待办新建/勾选/删除、日期与 DB 一致 |
+| 树导航 | 通过 7/7 | 通过 | 3aad84de；移动/删除/恢复、展开/多选有补充 DB 读数；性能中位 247ms ≤500ms |
+| 编辑与自动保存 | 通过 6/6 | 通过 | 基线 3aad84de 5 项 + AC-02 修复 f7cd4f76；<800ms 强杀仍丢最后输入但已显示“● 未保存”，等待 2 秒保存，残余行为已如实记录 |
+| 导入导出/PDF | 通过 6/6 | 通过 | 3f94cbcc 修复 PDF 同段内联拆行；eff7c879 拦截损坏 Markdown；新证据见 7.2 |
+| 响应式/无障碍/性能 | 4 通过 / 3 未交付-阻塞 | 未交付（阻塞） | AC-03/04/06/07 通过；AC-01/02 原生 320/380 被 WM 钳到 480vp；AC-05 无读屏/TTS 音频通道 |
+
+门禁读数：`check_coverage.py` 输出 8 行、已覆盖 8、缺失 0、不适用 0、账本 8/8、通过 7 / 失败 0 / 阻塞 1，exit 0；8 批 `check_evidence.py --strict` 全部 exit 0；响应式项目检查器 `账本 7 条` 通过，exit 0。覆盖总表 10 列、8 行均“已覆盖”，表头与说明明确“已覆盖只表示账本存在，不判通过”，没有把已覆盖写成通过。
+
+### 7.2 导入导出/PDF 修复复核
+
+- AC-03：`evidence/fix-2026-11-07/02-pdf-check.txt` 记录 PDF 61,914B、PDFKit 1 页；实读 `02-pdf-render.png`，同段“粗体、斜体、代码、链接”连续排在同一行，不再各自拆行。证据路径存在。
+- AC-05：`01-broken-md-error.jpeg` 显示“无法读取所选文件 / 换一批 .md 文件再试 / 重新选择文件”，无“已导入”Toast；`03-db-before-after.txt` 记录 pages 15|15，导入前后无新增页。证据路径存在。
+- HAP/commit：07 与 `04-hap-sha256.txt` 的 HAP 为 `59d3854a83cab64e8f7212b8c3abf8c9be3e4a9c43f678cf3199e1cc9ca361fc`（9,490,987B），与当前 `entry/build/default/outputs/default/entry-default-signed.hap` 实算一致；`05-build.log` 显示 01:06 BUILD SUCCESSFUL，两个修复 commit `3f94cbcc`（PrintHtmlBuilder）与 `eff7c879`（Markdown 导入拦截）均为 01:09:03。构建早于提交约 3 分钟，属于“先构建验证、后提交”的时序；HAP 内容包含两项修复，07 以 eff7c879 作为修复后构建锚点，绑定可核。该时序作为 P3 归档建议，不影响 6/6 结论。
+- 07 的 AC-03/AC-05 新证据路径均存在；包结论“通过 6/6”，欠账已销账；观察项（多页导出无独立入口、图片子项沿用基线、导入侧取消未单独取证）保留，不改变本批结论。
+
+### 7.3 响应式/无障碍/性能复核
+
+- AC-04：`evidence/AC-04/fix-2026-11-07/AC-04-读数.md` 记录 Ctrl+F 出现查找栏（hint=查找内容）、Ctrl+Z 将 checkbox 从 false 还原 true、Ctrl+S 顶栏“✓ 已保存”，并有 `ctrl-f-after.json`、`ctrl-z-before/after.json`、`ctrl-s-after.txt`；原“快捷键全部无效”是焦点未回到编辑器正文、菜单点击命中页面正文导致的假阴性，复核改判通过成立。
+- AC-01/02：`blocking-form.md` 写明 WM 最小窗口 912px=480vp，拖到 320/380 均被钳回；同一设备 900vp 正对照三栏正常，Chrome CDP 320/380 网页编辑器无横向溢出；环境/注入通道/判据/数据四维均有尝试记录，替代证据与解锁条件齐全。`AC-01-读数.md`、`AC-02-读数.md` 记录原生 480vp 截图/布局树及网页层 320/380 读数。
+- AC-05：`AC-05-读数.md` 按代码/资源核对四个关键按钮（多选、新建页面、更多操作、关闭标签页）均有非空 `.accessibilityText`，资源值为“多选/新建页面/更多操作/关闭标签页”，en_US 也有值；设备 `bm dump -a`/`param list` 无 screenreader/TTS，布局树不输出 accessibilityText，无法做播报取证。代码行号有 4–10 行偏移（PageListPane 实际 324/346，报告写 318/336；PageCard 实际 241，报告写 245；TabStrip 148 正确），但符号与资源值成立；这是 P3 文档精度问题，不影响“名称已核对、读屏播报阻塞”的判定。
+- 三条阻塞均按 blocking-form 记录卡点、四维尝试、正对照、替代证据、解锁条件，包结论为 `未交付（阻塞）`，不是失败，也不是通过。
+
+### 7.4 T4 两份试点
+
+| 试点 | 07 结论 | 复审 | 关键依据 |
+|---|---|---|---|
+| 关于页复制版本号 | 4/4 通过 | 通过 | 基线 3aad84de；功能 706a1d6f；干净 worktree HAP `334e4c2d…`（9,492,560B）；`01-build-clean-706.log` 17s739；`02-hap-sha256-clean-706.txt` 哈希一致；`12-final-test-all-57-0.log` 57/0/0 |
+| 编辑保存提示修复 | 4/4 通过 | 通过 | 基线 3aad84de；修复 f7cd4f76；干净 worktree HAP `464160d0…`（9,487,351B）；AC-03/04 使用 clean-f7cd 证据；`06-final-test-all-57-0.log` 57/0/0；任务卡锚点已改 f7cd4f76，旧 e0682 已标注作废 |
+
+两份 07 均 10 列、4 行全通过，证据路径存在，`check_evidence.py --strict` 与项目 `check-acceptance-evidence.mjs` 均通过。关于页 HAP 有 build log/hash 归档；编辑页 HAP 的哈希在 07 与 `00-run-report.md` 中一致，上一轮复审时已从 `/tmp/ruiku-f7cd4f76` 临时 worktree 复算为 `464160d…`；本轮该 worktree 已被清理，evidence 目录没有单独的 clean build log/hash 文件，无法再次复算，作为 P3 证据归档建议。T4 的 metrics 已补“新 Agent 无聊天历史、仅提供 SKILL/适配层/任务卡”，P2-4 已闭合。
+
+### 7.5 未交付（阻塞）项与复验条件
+
+| ID | 影响 | 负责人 | 复验条件 |
+|---|---|---|---|
+| AC-01/02 | 原生 320/380 窗口下的三栏折叠、标题截断、按钮可点未验证；网页层 320/380 只能作辅助 | batch-responsive-a11y-perf | 提供允许原生 320/380 的设备/模拟器或 WM 调试权限；拖到 320/380，读 WindowManagerService bounds，截图并点“返回列表”和页面卡片；重跑 7/7 |
+| AC-05 | 读屏顺序与播报文本未验证；代码/资源已证明关键按钮有名称，但没有运行时可读证据 | batch-responsive-a11y-perf | 提供装有 HarmonyOS 系统读屏与 TTS、有音频通道的设备；依次聚焦新建页、搜索、收藏、删除，记录播报文本并用读屏完成一次新建/打开；重跑 7/7 |
+
+### 7.6 复审后的残余事项
+
+- P2-8（低风险，发布后欠账）：CI 仍只跑 4 个示例，未把 `anti_examples` 和第 5 个示例纳入 workflow；本地/干净克隆已 10/10、五示例全过，未伪称 CI 覆盖。
+- P3：导入修复构建 01:06 早于提交 01:09 约 3 分钟，建议后续先提交后 clean build；AC-05 代码行号偏移；编辑 T4 clean build log/hash 未归档；启动批构建日志/哈希仍建议归档。以上均不改变 7 通过 / 0 失败 / 1 阻塞。
+
+### 7.7 复审结论
+
+**未交付（阻塞）。** 导入导出/PDF 由 4/6 修复为 6/6，响应式 AC-04 由失败改判通过；剩余 AC-01/02/05 是设备能力缺失且有完整 blocking-form，按模板记阻塞，不写成通过。8 批中 7 批通过、1 批阻塞，T4 两份 4/4；因此不能对外宣称 8/8 全量通过，交付结论只能是“未交付（阻塞）”。待阻塞项具备复验条件后，按 7.5 复验并重跑门禁，再申请最终通过。
