@@ -18,7 +18,7 @@
 <项目根>/.verity/adapter.json
 ```
 
-从 `templates/adapter.json` 复制，按本项目实际情况填写。适配层属于项目资产，跟着项目走；不要把它复制回 verity 仓库，也不要把里面的路径、命令、设备入口写进 verity 的规则或示例。
+也可以放在项目自己的验收目录，命名为 `verity-适配层.json`（中文文件名直接可被检查器发现）。从 `templates/adapter.json` 复制，按本项目实际情况填写。检查器的自动发现顺序是 `verity-适配层.json` → `.verity/adapter.json` → `verity-adapter.json` → `adapter.json`；命令行 `--adapter` 显式指定时优先，不存在直接报错。适配层属于项目资产，跟着项目走；不要把它复制回 verity 仓库，也不要把里面的路径、命令、设备入口写进 verity 的规则或示例。
 
 适配层里**禁止出现**：密码、令牌、Cookie、私钥、设备序列号、内网地址、真实用户数据。需要引用凭据时写“从环境变量读取”之类的入口说明，不写值。
 
@@ -37,7 +37,13 @@
 | `paths.ledger_root` | 是 | 07 账本根目录，相对项目根 | 检查器会递归扫描其中的 `07-*.md`，并与覆盖总表对账 |
 | `paths.evidence_root` | 是 | 证据文件根目录，相对项目根 | 07 里的证据路径建议相对项目根或账本目录，保持可移植 |
 | `paths.coverage_master` | 否 | 覆盖总表路径，相对项目根 | 仅作记录；命令行参数优先 |
-| `paths.ledger_template` | 否 | 项目自己的 07 账本模板，相对项目根 | 填了它，`init` 会按项目模板生成；留空则用 verity 仓库的八列模板。模板文件必须存在；`check_evidence.py --adapter` 会读取模板里的 marker 判断是否为项目 v1 十列格式 |
+| `paths.ledger_template` | 否 | 项目自己的 07 账本模板，相对项目根 | 填了它，`init` 会按项目模板生成；留空则用 verity 仓库的 v1 十列模板。模板文件必须存在；`check_evidence.py --adapter` 会读取模板里的 marker 判断是否为 v1 格式 |
+| `paths.task_card_template` | 否 | 项目自己的任务卡模板，相对项目根 | 填了它，`init` 按项目模板生成任务卡；留空用 verity 仓库模板 |
+| `paths.blocking_form_template` | 否 | 项目自己的阻塞举证单模板，相对项目根 | 填了它，`init` 按项目模板生成举证单；留空用 verity 仓库模板 |
+| `ledger.statuses` | 否 | 账本允许的状态数组 | 必须是 verity 支持值的非空子集；项目验收建议 `通过 / 未交付-失败 / 未交付-阻塞 / 未覆盖` |
+| `ledger.conclusions` | 否 | 允许的包结论数组 | 必须是 verity 支持值的非空子集；项目验收建议 `通过 / 未交付（失败） / 未交付（阻塞）` |
+| `ledger.evidence_types` | 否 | 证据类型数组 | 必须是 verity 支持值的非空子集 |
+| `ledger.confidences` | 否 | 证据置信度数组 | 必须是 `高 / 中 / 低` 的非空子集 |
 | `device.entry` | 是 | 设备操作入口：项目内脚本路径、工具名或人工操作说明 | 不写序列号、账号、连接地址；不把设备命令抄进 verity |
 | `redaction.rules` | 是 | 脱敏规则数组，每项含 `pattern`（正则）、`replace`、`description` | 证据落盘或提交前按顺序应用 |
 | `redaction.forbidden` | 是 | 绝对不能出现的内容类别列表 | 至少包含密码、令牌、Cookie、私钥、真实用户数据 |
@@ -76,7 +82,7 @@ python3 <verity 仓库>/scripts/check_evidence.py <07 路径> \
   --adapter <项目根>/.verity/adapter.json
 ```
 
-不带适配层也可以显式写 `--format v1 --root <项目根>`；仓库八列账本继续走默认格式，不需要额外参数。
+检查器默认允许 `带欠账` 状态与 `带欠账交付` 结论；项目验收合同不允许欠账时加 `--strict`，出现欠账会报 `E_STRICT_DEBT`。不带适配层也可以显式写 `--format v1 --root <项目根>`；旧八列账本用 `--format legacy`。
 
 退出码：`0` 通过；`1` 有问题；`2` 参数或读取错误。
 
@@ -84,6 +90,6 @@ python3 <verity 仓库>/scripts/check_evidence.py <07 路径> \
 
 ## 6. 换项目时改哪里
 
-只改六处：`project`、`baseline`、`commands`、`paths`、`device`、`redaction`，再按新项目的模块清单更新 `modules`。规则正文、模板和脚本都不改。
+只改七处：`project`、`baseline`、`commands`、`paths`、`ledger`（可选）、`device`、`redaction`，再按新项目的模块清单更新 `modules`。规则正文、模板和脚本都不改。
 
 如果新项目没有设备，`device.entry` 写“无设备操作”并把 `commands.device` 设为空数组；不要删字段，保持结构一致。

@@ -72,9 +72,9 @@ if [ -n "$(find "$TARGET/evidence" -type f -print -quit)" ]; then
     NORMAL_OK=0
     echo "  evidence/ 不应自动生成文件"
 fi
-if ! grep -q "待验" "$TARGET/07-验收回归清单.md"; then
+if ! grep -q "未覆盖" "$TARGET/07-验收回归清单.md"; then
     NORMAL_OK=0
-    echo "  账本初始状态不是待验"
+    echo "  账本初始状态不是未覆盖"
 fi
 
 # 空账本应被检查器以“缺字段”拒绝，而不是抛异常。
@@ -83,7 +83,7 @@ EMPTY_CODE=$?
 if [ "$EMPTY_CODE" -eq 0 ]; then
     NORMAL_OK=0
     echo "  空账本不应通过检查"
-elif ! grep -q "E_FIELD" "$TMP/empty.out" || ! grep -q "验收项为空" "$TMP/empty.out"; then
+elif ! grep -q "E_FIELD" "$TMP/empty.out" || ! grep -q "没有任何验收项" "$TMP/empty.out"; then
     NORMAL_OK=0
     echo "  空账本没有可读的缺字段提示"
 fi

@@ -4,15 +4,18 @@
 只使用 Python 标准库，检查五类问题：
 
 1. 账本字段：批次信息、表头列数、行内必填项是否齐全；
-2. 状态枚举：通用八列只允许七种状态；项目 v1 十列只允许五种状态；
+2. 状态枚举：通用八列只允许七种状态；项目 v1 十列按适配层枚举校验；
 3. 证据文件：证据列引用的相对路径必须真实存在；
 4. 旧结论词：出现“通过（含残余）”“基本可用”等直接判错；
-5. 重复状态源：同一目录多份 07 账本、同一账本多个账本段或重复 ID。
+5. 重复状态源：同一目录多份 07 账本、同一账本多个账本段或重复 ID；
+6. 版本锚点：v1 的 commit 必须是真实 git 对象，并等于 HEAD 或为其祖先；
+7. 证据时效：证据日期或文件 mtime 早于 commit 日期时按旧证据拒绝。
 
 默认按账本内容自动识别格式：带 `acceptance-evidence: v1` marker 或
-“单项验收（证据账本）”段的按项目 v1 十列检查，其余按通用八列检查。
-也可以用 `--format legacy|v1` 显式指定；`--adapter` 会读取项目根和
-项目账本模板，决定证据路径基准与默认格式。
+“单项验收（证据账本）”段的按 v1 十列检查，其余按通用八列检查。
+也可以用 `--format legacy|v1` 显式指定；`--adapter` 会读取项目根、
+项目账本模板和账本枚举，决定证据路径基准、默认格式与允许取值。
+`--strict` 额外拒绝任何“带欠账/带欠账交付”。
 
 退出码：0 = 通过；1 = 发现问题；2 = 参数或读取错误。
 """
@@ -22,9 +25,11 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from collections import Counter
 from dataclasses import dataclass
+from datetime import date, datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -35,13 +40,34 @@ EVIDENCED_STATUSES = {"通过", "未通过", "阻塞"}
 # 模板里的结论占位符不是真实结论；空账本应只报缺字段，不要额外判结论非法。
 PLACEHOLDER_CONCLUSIONS = {"通过 / 未通过 / 阻塞", "通过/未通过/阻塞"}
 
-# 项目 v1 十列账本（项目侧契约，如 ruiku-note）。verity 仓库仍以八列为
-# 基础格式；带 v1 marker 的账本按项目格式检查，避免把正常的扩展列误判成
-# “缺少 ## 账本”或把“带欠账”状态误判成旧结论词。
+# v1 十列账本（默认模板格式，项目可再收窄枚举）。带 v1 marker 的账本按
+# 十列检查，避免把正常的扩展列误判成“缺少 ## 账本”或把“带欠账”状态
+# 误判成旧结论词；旧八列账本继续用 legacy 分支读取。
 V1_MARKER = "<!-- acceptance-evidence: v1 -->"
 V1_STATUSES = ("通过", "带欠账", "未交付-失败", "未交付-阻塞", "未覆盖")
 V1_EVIDENCE_TYPES = ("截图", "布局树", "像素", "DB", "日志", "性能")
 V1_CONFIDENCES = ("高", "中", "低")
+V1_CONCLUSIONS = ("通过", "带欠账交付", "未交付（失败）", "未交付（阻塞）")
+
+
+@dataclass(frozen=True)
+class LedgerPolicy:
+    """v1 账本允许的状态与包结论。
+
+    默认值是 verity 的通用五状态；项目适配层可以收窄，例如 ruiku-note
+    只允许四状态、三结论，不允许“带欠账”。枚举只能从默认集合里取子集，
+    防止项目配置把错别字固化成新规范。
+    """
+
+    statuses: tuple[str, ...] = V1_STATUSES
+    conclusions: tuple[str, ...] = V1_CONCLUSIONS
+    evidence_types: tuple[str, ...] = V1_EVIDENCE_TYPES
+    confidences: tuple[str, ...] = V1_CONFIDENCES
+
+
+def normalize_conclusion(value: str) -> str:
+    """把包结论里的半角括号统一成全角，便于和适配层枚举比较。"""
+    return value.strip().replace("(", "（").replace(")", "）")
 V1_REQUIRED_COLUMNS = (
     "id",
     "user_path",
@@ -312,15 +338,80 @@ def extract_paths(text: str) -> list[str]:
     return paths
 
 
-def path_exists(candidate: str, root: Path, ledger_dir: Path) -> bool:
-    """证据路径允许按仓库根相对，也允许按账本所在目录相对。"""
+def resolve_existing_path(candidate: str, root: Path, ledger_dir: Path) -> Optional[Path]:
+    """返回证据文件的实际路径；不存在时返回 None。
+
+    相对路径允许按账本所在目录或项目根解析，账本目录优先，便于批次内
+    证据随批次目录一起移动。
+    """
     raw = Path(candidate)
     if raw.is_absolute():
-        return raw.is_file()
+        return raw if raw.is_file() else None
     for base in (ledger_dir, root):
-        if (base / raw).is_file():
-            return True
-    return False
+        path = base / raw
+        if path.is_file():
+            return path
+    return None
+
+
+def path_exists(candidate: str, root: Path, ledger_dir: Path) -> bool:
+    """证据路径允许按仓库根相对，也允许按账本所在目录相对。"""
+    return resolve_existing_path(candidate, root, ledger_dir) is not None
+
+
+def git_commit_date(root: Path, commit: str) -> tuple[Optional[date], Optional[str]]:
+    """校验 commit 是否是真实提交并返回提交日期。
+
+    返回 (日期, 错误)。不是 git 仓库、对象不存在或不是 commit 时，错误
+    非空；日期按本机时区取，与证据文件 mtime 的时区口径一致。
+    """
+    try:
+        verify = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (OSError, ValueError) as error:
+        return None, f"无法执行 git：{error}"
+    if verify.returncode != 0:
+        return None, "不是真实 git 提交，或项目根不是 git 仓库"
+    try:
+        show = subprocess.run(
+            ["git", "-C", str(root), "show", "-s", "--format=%ct", commit],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (OSError, ValueError) as error:
+        return None, f"无法读取提交时间：{error}"
+    if show.returncode != 0 or not show.stdout.strip().isdigit():
+        return None, "无法读取提交时间"
+    try:
+        return datetime.fromtimestamp(int(show.stdout.strip())).date(), None
+    except (ValueError, OSError) as error:
+        return None, f"提交时间无法解析：{error}"
+
+
+def git_is_ancestor(root: Path, commit: str) -> tuple[bool, Optional[str]]:
+    """判断 commit 是否等于 HEAD 或为 HEAD 的祖先。
+
+    git merge-base --is-ancestor 返回 0 = 是，1 = 不是，其他 = 无法判断。
+    """
+    try:
+        process = subprocess.run(
+            ["git", "-C", str(root), "merge-base", "--is-ancestor", commit, "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (OSError, ValueError) as error:
+        return False, f"无法执行 git：{error}"
+    if process.returncode == 0:
+        return True, None
+    if process.returncode == 1:
+        return False, None
+    return False, "无法判断 commit 与 HEAD 的祖先关系（项目根可能不是 git 仓库）"
 
 
 def scan_old_words(text: str, v1: bool = False) -> list[Issue]:
@@ -484,13 +575,20 @@ def v1_conclusion_value(text: str) -> tuple[str, Optional[int]]:
     return "", None
 
 
-def expected_v1_conclusion(statuses: list[str]) -> str:
-    """由账本状态推导包结论；未覆盖属于欠账，不能写“通过”。"""
+def expected_v1_conclusion(statuses: list[str], policy: Optional[LedgerPolicy] = None) -> str:
+    """由账本状态推导包结论；未覆盖不能再算“通过”或“带欠账”。
+
+    “带欠账”是通用 v1 的正式状态，仍映射为“带欠账交付”；项目若在适配层
+    收窄掉该状态，就不会出现这条分支。未覆盖是尚未取证，按失败收口。
+    """
+    current = policy or LedgerPolicy()
     if any(status == "未交付-失败" for status in statuses):
         return "未交付（失败）"
     if any(status == "未交付-阻塞" for status in statuses):
         return "未交付（阻塞）"
-    if any(status in {"带欠账", "未覆盖"} for status in statuses):
+    if any(status == "未覆盖" for status in statuses):
+        return "未交付（失败）"
+    if "带欠账" in current.statuses and any(status == "带欠账" for status in statuses):
         return "带欠账交付"
     if statuses and all(status == "通过" for status in statuses):
         return "通过"
@@ -498,15 +596,26 @@ def expected_v1_conclusion(statuses: list[str]) -> str:
 
 
 def check_v1_ledger(
-    path: Path, root: Path, text: str, sections
+    path: Path,
+    root: Path,
+    text: str,
+    sections,
+    policy: Optional[LedgerPolicy] = None,
+    strict: bool = False,
 ) -> tuple[list[Issue], dict[str, int], str]:
     """检查项目 v1 十列五节账本。
 
-    该格式的“带欠账”是正式状态，不是旧结论词；字段、枚举和证据路径
-    仍按同一套底线检查，避免项目模板绕过通用校验器。
+    参数：
+        policy: 项目适配层声明的允许枚举；缺省用通用五状态。
+        strict: 为 True 时拒绝任何“带欠账/带欠账交付”。
+
+    字段、枚举、证据路径、commit 真实性和证据时效都按同一套底线检查，
+    避免项目模板绕过通用校验器。
     """
+    current_policy = policy or LedgerPolicy()
     issues: list[Issue] = []
     status_counts: Counter[str] = Counter()
+    debt_lines: list[int] = []
     conclusion = ""
     conclusion_line: Optional[int] = None
 
@@ -521,11 +630,11 @@ def check_v1_ledger(
         conclusion, conclusion_line = v1_conclusion_value(package_text)
         if not conclusion:
             issues.append(Issue("E_FIELD", "包结论的交付结论为空", conclusion_line or package[1]))
-        elif not re.fullmatch(r"通过|带欠账交付|未交付(?:[（(](?:失败|阻塞)[）)])?", conclusion):
+        elif normalize_conclusion(conclusion) not in current_policy.conclusions:
             issues.append(
                 Issue(
                     "E_CONCLUSION",
-                    f"交付结论“{conclusion}”只能是：通过 / 带欠账交付 / 未交付（失败 / 阻塞）",
+                    f"交付结论“{conclusion}”只能是：{' / '.join(current_policy.conclusions)}",
                     conclusion_line,
                 )
             )
@@ -605,12 +714,12 @@ def check_v1_ledger(
             status != "未覆盖"
             and evidence_type
             and not v1_value_empty(evidence_type)
-            and evidence_type not in V1_EVIDENCE_TYPES
+            and evidence_type not in current_policy.evidence_types
         ):
             issues.append(
                 Issue(
                     "E_EVIDENCE_TYPE",
-                    f"证据类型“{evidence_type}”只能是：{'/'.join(V1_EVIDENCE_TYPES)}",
+                    f"证据类型“{evidence_type}”只能是：{'/'.join(current_policy.evidence_types)}",
                     number,
                 )
             )
@@ -620,10 +729,14 @@ def check_v1_ledger(
             status != "未覆盖"
             and confidence
             and not v1_value_empty(confidence)
-            and confidence not in V1_CONFIDENCES
+            and confidence not in current_policy.confidences
         ):
             issues.append(
-                Issue("E_CONFIDENCE", f"置信度“{confidence}”只能是：{'/'.join(V1_CONFIDENCES)}", number)
+                Issue(
+                    "E_CONFIDENCE",
+                    f"置信度“{confidence}”只能是：{'/'.join(current_policy.confidences)}",
+                    number,
+                )
             )
 
         time_value = values["time"]
@@ -636,36 +749,63 @@ def check_v1_ledger(
             issues.append(Issue("E_TIME", f"时间“{time_value}”不是 YYYY-MM-DD", number))
 
         commit = values["commit"]
-        if (
-            status != "未覆盖"
-            and commit
-            and not v1_value_empty(commit)
-            and not V1_COMMIT_RE.fullmatch(commit)
-        ):
-            issues.append(Issue("E_COMMIT", f"commit“{commit}”不是 7-40 位哈希或“工作区”", number))
+        commit_date: Optional[date] = None
+        if status != "未覆盖" and commit and not v1_value_empty(commit):
+            if not V1_COMMIT_RE.fullmatch(commit):
+                issues.append(
+                    Issue("E_COMMIT", f"commit“{commit}”不是 7-40 位哈希或“工作区”", number)
+                )
+            elif commit != "工作区":
+                commit_date, commit_error = git_commit_date(root, commit)
+                if commit_error:
+                    issues.append(
+                        Issue(
+                            "E_COMMIT",
+                            f"commit“{commit}”无法校验：{commit_error}",
+                            number,
+                        )
+                    )
+                else:
+                    ancestor, ancestor_error = git_is_ancestor(root, commit)
+                    if ancestor_error:
+                        issues.append(Issue("E_COMMIT", f"commit“{commit}”无法校验：{ancestor_error}", number))
+                    elif not ancestor:
+                        issues.append(
+                            Issue(
+                                "E_COMMIT",
+                                f"commit“{commit}”不是 HEAD 或 HEAD 的祖先，不能用旧提交当本批锚点",
+                                number,
+                            )
+                        )
 
         if v1_value_empty(status):
             issues.append(Issue("E_FIELD", "状态为空", number))
-        elif status not in V1_STATUSES:
+        elif status not in current_policy.statuses:
             issues.append(
                 Issue(
                     "E_STATUS",
-                    f"状态“{status}”不在 v1 五种枚举内（{'/'.join(V1_STATUSES)}）",
+                    f"状态“{status}”不在允许枚举内（{'/'.join(current_policy.statuses)}）",
                     number,
                 )
             )
         else:
             status_counts[status] += 1
+            if status == "带欠账":
+                debt_lines.append(number)
 
-        if status in {"通过", "带欠账"}:
+        # 除“未覆盖”外，每种状态都必须给证据；状态本身允许“未交付”，
+        # 但“没证据的失败/阻塞”无法复核，仍按缺证据拒绝。
+        if status != "未覆盖":
             evidence = values["evidence"]
             if v1_value_empty(evidence) or evidence_is_empty(evidence):
                 issues.append(
                     Issue("E_MISSING_EVIDENCE", f"{item_id or '该行'}（{status}）的证据列为空", number)
                 )
             else:
+                evidence_paths: list[Path] = []
                 for candidate in extract_paths(evidence):
-                    if not path_exists(candidate, root, ledger_dir):
+                    resolved_path = resolve_existing_path(candidate, root, ledger_dir)
+                    if resolved_path is None:
                         issues.append(
                             Issue(
                                 "E_EVIDENCE_PATH",
@@ -673,11 +813,52 @@ def check_v1_ledger(
                                 number,
                             )
                         )
+                    else:
+                        evidence_paths.append(resolved_path)
+
+                # 旧证据不能复用：证据日期和文件 mtime 都不能早于 commit 日期。
+                # 同一天内不按小时卡，避免“上午产出证据、下午提交基线”的正常流程误报。
+                if commit_date is not None:
+                    row_date: Optional[date] = None
+                    if V1_DATE_RE.fullmatch(time_value):
+                        try:
+                            row_date = date.fromisoformat(time_value)
+                        except ValueError:
+                            row_date = None
+                    if row_date is not None and row_date < commit_date:
+                        issues.append(
+                            Issue(
+                                "E_STALE",
+                                f"证据日期 {row_date} 早于 commit 日期 {commit_date}，不能复用旧证据",
+                                number,
+                            )
+                        )
+                    for evidence_path in evidence_paths:
+                        try:
+                            file_date = datetime.fromtimestamp(evidence_path.stat().st_mtime).date()
+                        except OSError as error:
+                            issues.append(
+                                Issue(
+                                    "E_EVIDENCE_PATH",
+                                    f"无法读取证据文件时间：{evidence_path}（{error}）",
+                                    number,
+                                )
+                            )
+                            continue
+                        if file_date < commit_date:
+                            issues.append(
+                                Issue(
+                                    "E_STALE",
+                                    f"证据文件 mtime {file_date} 早于 commit 日期 {commit_date}，"
+                                    f"不能复用旧证据：{evidence_path}",
+                                    number,
+                                )
+                            )
 
     # 包结论必须和账本状态一致；空结论已在包结论段报过缺字段。
     if conclusion:
-        expected = expected_v1_conclusion(list(status_counts.elements()))
-        if expected and conclusion != expected:
+        expected = expected_v1_conclusion(list(status_counts.elements()), current_policy)
+        if expected and normalize_conclusion(conclusion) != expected:
             issues.append(
                 Issue(
                     "E_CONCLUSION",
@@ -686,15 +867,33 @@ def check_v1_ledger(
                 )
             )
 
+    # strict 用于发版前卡口：带欠账一律不放行，不管它写成了状态还是包结论。
+    if strict and (
+        status_counts.get("带欠账", 0)
+        or normalize_conclusion(conclusion) == "带欠账交付"
+    ):
+        issues.append(
+            Issue(
+                "E_STRICT_DEBT",
+                "strict 模式拒绝带欠账：请补齐欠账证据或把结论改为未交付",
+                debt_lines[0] if debt_lines else conclusion_line,
+            )
+        )
+
     return issues, dict(status_counts), conclusion
 
 
 def check_ledger(
-    path: Path, root: Path, forced_format: str = "auto"
+    path: Path,
+    root: Path,
+    forced_format: str = "auto",
+    policy: Optional[LedgerPolicy] = None,
+    strict: bool = False,
 ) -> tuple[list[Issue], dict[str, int], str]:
     """执行全部检查，返回 (问题列表, 状态计数, 收口/包结论)。
 
     forced_format：auto 按 marker 判断；legacy 强制八列；v1 强制项目十列。
+    policy 决定 v1 允许状态/结论/证据类型/置信度；strict 额外拒绝带欠账。
     """
     issues: list[Issue] = []
     status_counts: Counter[str] = Counter()
@@ -721,7 +920,9 @@ def check_ledger(
     issues.extend(scan_old_words(text, v1=v1))
     issues.extend(check_duplicate_sources(path, text, sections, v1=v1))
     if v1:
-        v1_issues, v1_counts, v1_conclusion = check_v1_ledger(path, root, text, sections)
+        v1_issues, v1_counts, v1_conclusion = check_v1_ledger(
+            path, root, text, sections, policy, strict
+        )
         return issues + v1_issues, v1_counts, v1_conclusion
 
     ledger_section = find_section(sections, "账本")
@@ -939,11 +1140,65 @@ def check_ledger(
     return issues, dict(status_counts), declared_conclusion
 
 
-def adapter_context(adapter_path: Path) -> tuple[Path, str]:
-    """读取适配层的项目根和账本格式。
+@dataclass(frozen=True)
+class AdapterContext:
+    """适配层对账本检查的影响：项目根、默认格式和允许枚举。"""
+
+    project_root: Path
+    format: str
+    policy: LedgerPolicy
+
+
+def read_policy(data: dict) -> LedgerPolicy:
+    """读取 adapter.ledger 枚举块；未配置时用通用五状态。
+
+    枚举只能从 verity 已支持的值里取子集，不允许项目自造状态名；否则
+    “错别字”会被配置固化成规范。空列表视为配置错误。
+    """
+    raw = data.get("ledger")
+    if raw is None:
+        return LedgerPolicy()
+    if not isinstance(raw, dict):
+        raise ValueError("适配层 ledger 必须是对象")
+
+    def pick(key: str, default: tuple[str, ...], normalize: bool = False) -> tuple[str, ...]:
+        value = raw.get(key)
+        if value is None:
+            return default
+        if not isinstance(value, list) or not value or not all(
+            isinstance(item, str) and item.strip() for item in value
+        ):
+            raise ValueError(f"适配层 ledger.{key} 必须是非空字符串数组")
+        items = tuple(
+            normalize_conclusion(item) if normalize else item.strip()
+            for item in value
+        )
+        allowed = tuple(
+            normalize_conclusion(item) if normalize else item for item in default
+        )
+        invalid = [item for item in items if item not in allowed]
+        if invalid:
+            raise ValueError(
+                f"适配层 ledger.{key} 含未支持取值：{'、'.join(invalid)}；"
+                f"只能是：{'/'.join(allowed)}"
+            )
+        # 去重但保持配置顺序，避免重复枚举让报错信息变长。
+        return tuple(dict.fromkeys(items))
+
+    return LedgerPolicy(
+        statuses=pick("statuses", V1_STATUSES),
+        conclusions=pick("conclusions", V1_CONCLUSIONS, normalize=True),
+        evidence_types=pick("evidence_types", V1_EVIDENCE_TYPES),
+        confidences=pick("confidences", V1_CONFIDENCES),
+    )
+
+
+def adapter_context(adapter_path: Path) -> AdapterContext:
+    """读取适配层的项目根、账本格式和允许枚举。
 
     项目根按 adapter 所在目录解析 project.root；项目模板含 v1 marker 时
-    返回 v1，否则沿用通用八列。显式 --format 仍可覆盖这里的判断。
+    默认格式为 v1，否则沿用通用八列。显式 --format 仍可覆盖格式判断，
+    但枚举只由适配层决定，避免 CLI 参数绕过项目合同。
     """
     try:
         data = json.loads(adapter_path.read_text(encoding="utf-8"))
@@ -974,7 +1229,7 @@ def adapter_context(adapter_path: Path) -> tuple[Path, str]:
             raise ValueError(f"适配层 paths.ledger_template 指向的模板不存在：{template}")
         if V1_MARKER in template.read_text(encoding="utf-8"):
             fmt = "v1"
-    return project_root, fmt
+    return AdapterContext(project_root=project_root, format=fmt, policy=read_policy(data))
 
 
 def render_summary(path: Path, counts: dict[str, int], conclusion: str) -> str:
@@ -999,6 +1254,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="账本格式：auto 按 marker 判断（默认），legacy 八列，v1 项目十列",
     )
     parser.add_argument("--json", action="store_true", help="以 JSON 输出结果，便于 CI 消费")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="严格模式：除常规检查外，拒绝任何“带欠账”状态或“带欠账交付”结论",
+    )
     args = parser.parse_args(argv)
 
     if args.ledger:
@@ -1021,16 +1281,20 @@ def main(argv: Optional[list[str]] = None) -> int:
     resolved = path.resolve()
     adapter_root: Optional[Path] = None
     adapter_format = "auto"
+    policy = LedgerPolicy()
     if args.adapter:
         adapter_path = Path(args.adapter).expanduser()
         if not adapter_path.is_file():
             print(f"用法错误：适配层不存在或不是文件：{adapter_path}", file=sys.stderr)
             return 2
         try:
-            adapter_root, adapter_format = adapter_context(adapter_path.resolve())
+            context = adapter_context(adapter_path.resolve())
         except ValueError as error:
             print(f"用法错误：{error}", file=sys.stderr)
             return 2
+        adapter_root = context.project_root
+        adapter_format = context.format
+        policy = context.policy
 
     if args.root:
         root = Path(args.root).expanduser().resolve()
@@ -1046,7 +1310,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                 break
 
     forced_format = args.format if args.format != "auto" else adapter_format
-    issues, counts, conclusion = check_ledger(resolved, root, forced_format)
+    issues, counts, conclusion = check_ledger(
+        resolved, root, forced_format, policy=policy, strict=args.strict
+    )
     errors = [issue for issue in issues if issue.severity == "error"]
     warnings = [issue for issue in issues if issue.severity != "error"]
 
@@ -1056,6 +1322,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "ok": not errors,
             "conclusion": conclusion,
             "counts": counts,
+            "strict": args.strict,
             "errors": [
                 {"code": issue.code, "message": issue.message, "line": issue.line}
                 for issue in errors

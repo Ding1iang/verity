@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """verity 覆盖总表检查器。
 
-只使用 Python 标准库，检查六类问题：
+只使用 Python 标准库，检查九类问题：
 
 1. 结构：总表必须含批次、模块、入口、必测状态、07 路径、覆盖状态、不适用理由、负责人；
 2. 模块：适配层里每个 in_use 模块在总表至少有一行；
 3. 07 路径：写“已覆盖”的 07 必须真实存在，且文件名符合 07-*.md；
 4. 唯一认领：同一份 07 不能被两行重复认领；
 5. 不适用：必须写理由和负责人；
-6. 数量：07 根目录下的 07 文件数必须与总表认领的 07 数一致，且没有未登记的 07。
+6. 数量：07 根目录下的 07 文件数必须与总表认领的 07 数一致，且没有未登记的 07；
+7. 批次包：已覆盖行的批次目录、任务卡、举证单和 evidence/ 必须齐全；
+8. 互链：任务卡与 07 必须互相引用对方、模块和批次目录名；
+9. 结论：读取每个 07 的包结论，分别统计通过/失败/阻塞/带欠账/未定，不把“有账本”算通过。
 
 覆盖状态只有三种：已覆盖 / 缺失 / 不适用。本表不写通过/失败结论；
 通过/失败只从对应 07 账本读。
@@ -33,6 +36,7 @@ COVERAGE_STATUSES = ("已覆盖", "缺失", "不适用")
 REQUIRED_COLUMNS = ("batch", "module", "entry", "must_status", "ledger", "coverage", "owner")
 COLUMN_ALIASES = {
     "batch": ("批次", "批次名"),
+    "batch_dir": ("批次目录", "目录", "批次路径"),
     "module": ("模块", "模块名"),
     "module_id": ("模块id", "模块标识", "id"),
     "entry": ("入口", "用户入口", "用户路径"),
@@ -44,6 +48,7 @@ COLUMN_ALIASES = {
 }
 DISPLAY_COLUMNS = {
     "batch": "批次",
+    "batch_dir": "批次目录",
     "module": "模块",
     "entry": "入口",
     "must_status": "必测状态",
@@ -207,6 +212,72 @@ def resolve_path(raw: str, project_root: Path) -> Path:
     return candidate.resolve()
 
 
+def resolve_batch_dir(
+    raw: str, coverage_path: Path, project_root: Path
+) -> Optional[Path]:
+    """解析“批次目录”列。
+
+    该列通常是指向目录的 Markdown 链接，链接按覆盖总表所在目录解析；
+    纯文本路径按项目根解析，和 07 路径列保持一致。
+    """
+    text = raw.strip()
+    link = re.fullmatch(r"\[[^\]]*\]\(([^)]+)\)", text)
+    if link:
+        candidate = Path(link.group(1).strip()).expanduser()
+        base = coverage_path.parent
+    else:
+        text = text.strip("`").strip()
+        if is_empty(text):
+            return None
+        candidate = Path(text).expanduser()
+        base = project_root
+    if not candidate.is_absolute():
+        candidate = base / candidate
+    return candidate.resolve()
+
+
+def read_conclusion(ledger_path: Path) -> tuple[str, Optional[str]]:
+    """读取 07 的包结论/收口结论，归一为 通过/失败/阻塞/带欠账/未定。
+
+    返回 (归一结论, 原始文字)。读不到或还是占位符时归为“未定”，
+    覆盖检查只做统计，不代替 check_evidence 判账本合法性。
+    """
+    try:
+        text = ledger_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return "未定", None
+
+    sections = split_sections(text)
+    raw: Optional[str] = None
+    is_v1 = "acceptance-evidence: v1" in text or "单项验收（证据账本）" in text
+    if is_v1:
+        section = find_section(sections, "包结论")
+        if section is not None:
+            match = re.search(r"交付结论\s*[:：]\s*(.+)", "\n".join(line for _, line in section[2]))
+            if match:
+                raw = match.group(1).strip()
+    else:
+        section = find_section(sections, "收口")
+        if section is not None:
+            match = re.search(r"结论\s*[:：]\s*(.+)", "\n".join(line for _, line in section[2]))
+            if match:
+                raw = match.group(1).strip()
+    if raw is None:
+        return "未定", None
+
+    value = raw.strip().strip("`").strip().rstrip("。.；; ")
+    value = value.replace("(", "（").replace(")", "）")
+    mapping = {
+        "通过": "通过",
+        "未通过": "失败",
+        "未交付（失败）": "失败",
+        "未交付（阻塞）": "阻塞",
+        "阻塞": "阻塞",
+        "带欠账交付": "带欠账",
+    }
+    return mapping.get(value, "未定"), raw
+
+
 def is_ledger_name(path: Path) -> bool:
     """07 账本文件名必须是 07-*.md 或 07_*.md。"""
     return bool(LEDGER_NAME_RE.fullmatch(path.name))
@@ -221,8 +292,17 @@ def find_git_root(start: Path) -> Optional[Path]:
 
 
 def discover_adapter(start: Path) -> Optional[Path]:
-    """从覆盖总表所在目录向上找常见的适配层位置。"""
-    names = (Path(".verity") / "adapter.json", Path("verity-adapter.json"), Path("adapter.json"))
+    """从覆盖总表所在目录向上找常见的适配层位置。
+
+    `verity-适配层.json` 是项目约定的唯一真源；其余名字只为兼容旧项目，
+    按顺序先命中先用，避免同一目录出现两份配置时悄悄读错。
+    """
+    names = (
+        Path("verity-适配层.json"),
+        Path(".verity") / "adapter.json",
+        Path("verity-adapter.json"),
+        Path("adapter.json"),
+    )
     for parent in (start, *start.parents):
         for name in names:
             candidate = parent / name
@@ -348,29 +428,50 @@ def resolve_ledger_template(
     return candidate.resolve()
 
 
+@dataclass
+class CoverageResult:
+    """覆盖检查结果；结论计数只统计真实存在、能读到的 07。"""
+
+    issues: list[Issue]
+    status_counts: dict[str, int]
+    conclusion_counts: dict[str, int]
+    ledger_count: int
+    ledgers_present: int
+    ledgers_expected: int
+
+
 def check_coverage(
     coverage_path: Path,
     project_root: Path,
     adapter_data: Optional[dict],
     ledger_root: Optional[Path],
-) -> tuple[list[Issue], dict[str, int], int]:
-    """执行全部检查，返回 (问题列表, 覆盖状态计数, 07 文件数)。"""
+) -> CoverageResult:
+    """执行全部检查。
+
+    返回覆盖状态计数、07 结论计数和账本数量。账本“存在”不等于“通过”：
+    结论只从 07 的包结论/收口段读取，读不到就记“未定”。
+    """
     issues: list[Issue] = []
     status_counts: Counter[str] = Counter()
+    conclusion_counts: Counter[str] = Counter()
 
     try:
         text = coverage_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as error:
-        return [Issue("E_READ", f"无法读取覆盖总表：{error}")], {}, 0
+        return CoverageResult(
+            [Issue("E_READ", f"无法读取覆盖总表：{error}")], {}, {}, 0, 0, 0
+        )
 
     sections = split_sections(text)
     section = find_section(sections, "总表") or find_section(sections, "覆盖总表")
     if section is None:
-        return [Issue("E_STRUCTURE", "缺少“## 总表”段")], {}, 0
+        return CoverageResult([Issue("E_STRUCTURE", "缺少“## 总表”段")], {}, {}, 0, 0, 0)
 
     table = parse_first_table(section[2])
     if table is None:
-        return [Issue("E_STRUCTURE", "“总表”段没有 Markdown 表格", section[1])], {}, 0
+        return CoverageResult(
+            [Issue("E_STRUCTURE", "“总表”段没有 Markdown 表格", section[1])], {}, {}, 0, 0, 0
+        )
 
     header_line, header, rows = table
     columns = resolve_columns(header)
@@ -385,6 +486,8 @@ def check_coverage(
         )
     if not rows:
         issues.append(Issue("E_NO_ROWS", "总表没有任何数据行", section[1]))
+
+    has_batch_dir_column = "batch_dir" in columns
 
     # 适配层模块清单：id/name 都能匹配，优先用模块 ID 列。
     modules: list[dict] = []
@@ -413,6 +516,7 @@ def check_coverage(
             continue
 
         batch = cell(row, columns.get("batch"))
+        batch_dir_raw = cell(row, columns.get("batch_dir"))
         module_name = cell(row, columns.get("module"))
         module_id = cell(row, columns.get("module_id"))
         entry = cell(row, columns.get("entry"))
@@ -517,6 +621,118 @@ def check_coverage(
                     else:
                         claimed[ledger_path] = number
 
+                    # 批次包互链：目录、任务卡、07 必须能互相找到，且任务卡/07
+                    # 都写明模块 ID 和批次目录名，避免“账本存在但挂错批次”。
+                    if has_batch_dir_column:
+                        batch_dir = resolve_batch_dir(batch_dir_raw, coverage_path, project_root)
+                        if batch_dir is None:
+                            issues.append(Issue("E_BATCH_DIR", "已覆盖行必须写批次目录", number))
+                        elif not batch_dir.is_dir():
+                            issues.append(
+                                Issue(
+                                    "E_BATCH_DIR",
+                                    f"批次目录不存在：{batch_dir_raw}（解析为 {batch_dir}）",
+                                    number,
+                                )
+                            )
+                        else:
+                            if ledger_root is not None and batch_dir != ledger_root and ledger_root not in batch_dir.parents:
+                                issues.append(
+                                    Issue(
+                                        "E_BATCH_DIR",
+                                        f"批次目录不在配置的 07 根目录下：{batch_dir_raw}",
+                                        number,
+                                    )
+                                )
+                            if ledger_path.parent != batch_dir:
+                                issues.append(
+                                    Issue(
+                                        "E_LEDGER_LOCATION",
+                                        f"07 不在该批次目录内：{ledger_raw}；批次目录为 {batch_dir}",
+                                        number,
+                                    )
+                                )
+                            task_card = batch_dir / "task-card.md"
+                            if not task_card.is_file():
+                                issues.append(
+                                    Issue("E_TASK_CARD_MISSING", f"批次目录缺少 task-card.md：{batch_dir}", number)
+                                )
+                            else:
+                                try:
+                                    task_text = task_card.read_text(encoding="utf-8")
+                                except (OSError, UnicodeDecodeError):
+                                    task_text = ""
+                                module_refs = [item for item in (module_id, module_name) if item]
+                                if module_refs and not any(item in task_text for item in module_refs):
+                                    issues.append(
+                                        Issue(
+                                            "E_INTERLINK",
+                                            f"task-card.md 没有引用模块“{module_id or module_name}”",
+                                            number,
+                                        )
+                                    )
+                                if batch_dir.name not in task_text:
+                                    issues.append(
+                                        Issue(
+                                            "E_INTERLINK",
+                                            f"task-card.md 没有引用批次目录名“{batch_dir.name}”",
+                                            number,
+                                        )
+                                    )
+                                if "07-验收回归清单.md" not in task_text:
+                                    issues.append(
+                                        Issue(
+                                            "E_INTERLINK",
+                                            "task-card.md 没有链接 07-验收回归清单.md",
+                                            number,
+                                        )
+                                    )
+                            if not (batch_dir / "blocking-form.md").is_file():
+                                issues.append(
+                                    Issue(
+                                        "E_PACKAGE_MISSING",
+                                        f"批次包缺少 blocking-form.md：{batch_dir}",
+                                        number,
+                                    )
+                                )
+                            if not (batch_dir / "evidence").is_dir():
+                                issues.append(
+                                    Issue(
+                                        "E_PACKAGE_MISSING",
+                                        f"批次包缺少 evidence/ 目录：{batch_dir}",
+                                        number,
+                                    )
+                                )
+
+                            try:
+                                ledger_text = ledger_path.read_text(encoding="utf-8")
+                            except (OSError, UnicodeDecodeError):
+                                ledger_text = ""
+                            if "task-card.md" not in ledger_text:
+                                issues.append(
+                                    Issue("E_INTERLINK", "07 没有链接 task-card.md", number)
+                                )
+                            module_refs = [item for item in (module_id, module_name) if item]
+                            if module_refs and not any(item in ledger_text for item in module_refs):
+                                issues.append(
+                                    Issue(
+                                        "E_INTERLINK",
+                                        f"07 没有引用模块“{module_id or module_name}”",
+                                        number,
+                                    )
+                                )
+                            if batch_dir.name not in ledger_text:
+                                issues.append(
+                                    Issue(
+                                        "E_INTERLINK",
+                                        f"07 没有引用批次目录名“{batch_dir.name}”",
+                                        number,
+                                    )
+                                )
+
+                    conclusion, _ = read_conclusion(ledger_path)
+                    conclusion_counts[conclusion] += 1
+
         elif coverage_status == "缺失":
             if is_empty(ledger_raw):
                 issues.append(Issue("E_LEDGER_MISSING", "缺失行也要写计划中的 07 路径", number))
@@ -590,16 +806,44 @@ def check_coverage(
                     )
                 )
 
-    return issues, dict(status_counts), len(found_ledgers)
+    ledgers_present = sum(1 for ledger_path in claimed if ledger_path.is_file())
+    ledgers_expected = status_counts.get("已覆盖", 0) + status_counts.get("缺失", 0)
+    return CoverageResult(
+        issues=issues,
+        status_counts=dict(status_counts),
+        conclusion_counts=dict(conclusion_counts),
+        ledger_count=len(found_ledgers),
+        ledgers_present=ledgers_present,
+        ledgers_expected=ledgers_expected,
+    )
 
 
-def render_summary(path: Path, counts: dict[str, int], ledger_count: int) -> str:
-    """输出一行人类可读的通过摘要。"""
+def render_summary(path: Path, result: CoverageResult) -> str:
+    """输出一行人类可读的通过摘要。
+
+    “账本 N/N”只数文件是否存在；结论计数来自 07 的交付结论，两者分开写，
+    防止把“有账本”误读成“验收通过”。
+    """
+    counts = result.status_counts
     total = sum(counts.values())
     detail = " / ".join(
         f"{status} {counts.get(status, 0)}" for status in COVERAGE_STATUSES
     )
-    return f"[OK] {path}：{total} 行（{detail}），07 文件 {ledger_count} 份"
+    conclusions = result.conclusion_counts
+    conclusion_detail = (
+        f"通过 {conclusions.get('通过', 0)} / "
+        f"失败 {conclusions.get('失败', 0)} / "
+        f"阻塞 {conclusions.get('阻塞', 0)}"
+    )
+    if conclusions.get("带欠账", 0):
+        conclusion_detail += f" / 带欠账 {conclusions['带欠账']}"
+    if conclusions.get("未定", 0):
+        conclusion_detail += f" / 未定 {conclusions['未定']}"
+    return (
+        f"[OK] {path}：{total} 行（{detail}），"
+        f"账本 {result.ledgers_present}/{result.ledgers_expected}，"
+        f"结论{conclusion_detail}，07 文件 {result.ledger_count} 份"
+    )
 
 
 def run_check(args: argparse.Namespace) -> int:
@@ -663,10 +907,8 @@ def run_check(args: argparse.Namespace) -> int:
             )
         )
 
-    check_issues, counts, ledger_count = check_coverage(
-        coverage_path, project_root, adapter_data, ledger_root
-    )
-    issues.extend(check_issues)
+    result = check_coverage(coverage_path, project_root, adapter_data, ledger_root)
+    issues.extend(result.issues)
     errors = [issue for issue in issues if issue.severity == "error"]
     warnings = [issue for issue in issues if issue.severity != "error"]
 
@@ -674,9 +916,12 @@ def run_check(args: argparse.Namespace) -> int:
         payload = {
             "coverage": str(coverage_path),
             "ok": not errors,
-            "rows": sum(counts.values()),
-            "counts": counts,
-            "ledger_files": ledger_count,
+            "rows": sum(result.status_counts.values()),
+            "counts": result.status_counts,
+            "conclusions": result.conclusion_counts,
+            "ledgers_present": result.ledgers_present,
+            "ledgers_expected": result.ledgers_expected,
+            "ledger_files": result.ledger_count,
             "errors": [
                 {"code": issue.code, "message": issue.message, "line": issue.line}
                 for issue in errors
@@ -693,7 +938,7 @@ def run_check(args: argparse.Namespace) -> int:
         if errors:
             print(f"检查失败：{len(errors)} 项错误，{len(warnings)} 项警告")
         else:
-            print(render_summary(coverage_path, counts, ledger_count))
+            print(render_summary(coverage_path, result))
             if warnings:
                 print(f"检查通过，另有 {len(warnings)} 项警告")
 
@@ -718,15 +963,18 @@ def base_rows() -> list[list[str]]:
         module_id = f"m{index:02d}"
         module_name = f"模块{index}"
         entry = f"入口{index}"
+        batch = f"2026-11-06-批次{index:02d}"
+        batch_dir = f"batches/B{index:02d}"
         if index <= 6:
             rows.append(
                 [
-                    "B1",
+                    batch,
+                    batch_dir,
                     module_name,
                     module_id,
                     entry,
                     "必测",
-                    f"ledgers/07-{module_id}.md",
+                    f"{batch_dir}/07-验收回归清单.md",
                     "已覆盖",
                     "—",
                     "负责人甲",
@@ -735,12 +983,13 @@ def base_rows() -> list[list[str]]:
         elif index == 7:
             rows.append(
                 [
-                    "B1",
+                    batch,
+                    batch_dir,
                     module_name,
                     module_id,
                     entry,
                     "必测",
-                    f"ledgers/07-{module_id}.md",
+                    f"{batch_dir}/07-验收回归清单.md",
                     "缺失",
                     "—",
                     "负责人甲",
@@ -749,7 +998,8 @@ def base_rows() -> list[list[str]]:
         else:
             rows.append(
                 [
-                    "B1",
+                    batch,
+                    batch_dir,
                     module_name,
                     module_id,
                     entry,
@@ -769,8 +1019,8 @@ def render_master(rows: list[list[str]]) -> str:
     return (
         "# 覆盖总表：自测项目\n\n"
         "## 总表\n\n"
-        "| 批次 | 模块 | 模块 ID | 入口 | 必测状态 | 07 路径 | 覆盖状态 | 不适用理由 | 负责人 |\n"
-        "|---|---|---|---|---|---|---|---|---|\n"
+        "| 批次 | 批次目录 | 模块 | 模块 ID | 入口 | 必测状态 | 07 路径 | 覆盖状态 | 不适用理由 | 负责人 |\n"
+        "|---|---|---|---|---|---|---|---|---|---|\n"
         + body
         + "\n"
     )
@@ -785,6 +1035,7 @@ class SelftestCase:
     mutate: Callable[[list[list[str]], Path], None]
     expected_codes: tuple[str, ...] = ()
     add_orphan: bool = False
+    remove_task_card: bool = False
 
     @property
     def should_pass(self) -> bool:
@@ -792,29 +1043,62 @@ class SelftestCase:
 
 
 def build_selftest_project(root: Path, case: SelftestCase) -> Path:
-    """在独立临时目录里造项目、适配层、6 份 07 和覆盖总表。"""
+    """在独立临时目录里造项目、适配层、批次包和覆盖总表。"""
     project = root / case.slug
     (project / ".verity").mkdir(parents=True)
-    (project / "ledgers").mkdir()
+    (project / "batches").mkdir()
 
     adapter = {
         "schema": "verity-adapter/v1",
         "project": {"name": "selftest", "root": ".."},
-        "paths": {"ledger_root": "ledgers", "evidence_root": "evidence"},
+        "paths": {"ledger_root": "batches", "evidence_root": "evidence"},
         "modules": BASE_MODULES,
     }
     (project / ".verity" / "adapter.json").write_text(
         json.dumps(adapter, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    for index in range(1, 7):
-        (project / "ledgers" / f"07-m{index:02d}.md").write_text(
-            f"# 07 验收回归清单：m{index:02d}\n", encoding="utf-8"
-        )
 
     rows = base_rows()
     case.mutate(rows, project)
+
+    # 每个批次先建完整包：task-card / 07 / blocking-form / evidence。
+    # 07 只给“已覆盖”行建；缺失行故意留空，供缺账本检查命中。
+    for row in rows:
+        if len(row) < 9:
+            continue
+        batch_dir = project / row[1]
+        batch_dir.mkdir(parents=True, exist_ok=True)
+        module_id, module_name = row[3], row[2]
+        (batch_dir / "task-card.md").write_text(
+            f"# 任务卡：{batch_dir.name} / {module_name}\n\n"
+            f"| 字段 | 内容 |\n|---|---|\n| 模块 | {module_name} |\n| 模块 ID | {module_id} |\n\n"
+            "[07-验收回归清单.md](07-验收回归清单.md)\n",
+            encoding="utf-8",
+        )
+        (batch_dir / "blocking-form.md").write_text("# 阻塞举证\n\n不适用。\n", encoding="utf-8")
+        (batch_dir / "evidence").mkdir(exist_ok=True)
+        if row[7] == "已覆盖" and row[6].startswith("batches/"):
+            ledger_path = project / row[6]
+            ledger_path.parent.mkdir(parents=True, exist_ok=True)
+            if not ledger_path.exists():
+                ledger_path.write_text(
+                    f"# 07 验收回归清单：{batch_dir.name}\n\n"
+                    "<!-- acceptance-evidence: v1 -->\n\n"
+                    "[task-card.md](task-card.md)\n\n"
+                    f"模块 ID：{module_id}\n\n"
+                    "## 包结论\n\n- 交付结论：通过\n- 一句话说明：自测样本\n- 证据索引：—\n\n"
+                    "## 单项验收（证据账本）\n\n"
+                    "| 验收项 ID | 用户路径 | 预期 | 证据类型 | 证据 | 产出者 | 置信度 | 时间 | commit | 状态 |\n"
+                    "|---|---|---|---|---|---|---|---|---|---|\n"
+                    f"| {module_id.upper()}-01 | 入口 | 正常 | 日志 | — | 自测 | 高 | 2026-11-06 | 工作区 | 通过 |\n\n"
+                    "## 欠账\n\n无欠账。\n\n## 阻塞举证\n\n不适用。\n",
+                    encoding="utf-8",
+                )
+
+    if case.remove_task_card:
+        (project / "batches" / "B01" / "task-card.md").unlink(missing_ok=True)
     if case.add_orphan:
-        (project / "ledgers" / "07-orphan.md").write_text(
+        (project / "batches" / "07-orphan.md").write_text(
             "# 07 验收回归清单：未登记\n", encoding="utf-8"
         )
     (project / "coverage-master.md").write_text(render_master(rows), encoding="utf-8")
@@ -835,19 +1119,19 @@ def run_selftest() -> int:
         SelftestCase(
             "bad-fake-path",
             "坏样本·假路径",
-            lambda rows, project: rows[1].__setitem__(5, "ledgers/07-not-there.md"),
+            lambda rows, project: rows[1].__setitem__(6, "ledgers/07-not-there.md"),
             expected_codes=("E_LEDGER_MISSING",),
         ),
         SelftestCase(
             "bad-duplicate-ledger",
             "坏样本·重复 07",
-            lambda rows, project: rows[1].__setitem__(5, rows[0][5]),
+            lambda rows, project: rows[1].__setitem__(6, rows[0][6]),
             expected_codes=("E_LEDGER_DUP",),
         ),
         SelftestCase(
             "bad-na-no-reason",
             "坏样本·不适用无理由",
-            lambda rows, project: rows[7].__setitem__(7, ""),
+            lambda rows, project: rows[7].__setitem__(8, ""),
             expected_codes=("E_NA_REASON",),
         ),
         SelftestCase(
@@ -856,6 +1140,19 @@ def run_selftest() -> int:
             lambda rows, project: None,
             expected_codes=("E_LEDGER_COUNT",),
             add_orphan=True,
+        ),
+        SelftestCase(
+            "bad-cross-batch",
+            "坏样本·07 挂错批次",
+            lambda rows, project: rows[1].__setitem__(6, "batches/B03/07-验收回归清单.md"),
+            expected_codes=("E_LEDGER_LOCATION",),
+        ),
+        SelftestCase(
+            "bad-no-task-card",
+            "坏样本·缺任务卡",
+            lambda rows, project: None,
+            expected_codes=("E_TASK_CARD_MISSING",),
+            remove_task_card=True,
         ),
     ]
 

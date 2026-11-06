@@ -42,7 +42,16 @@
     "evidence_root": "<证据文件根目录，相对项目根>",
     "coverage_master": "<覆盖总表路径，相对项目根>",
     "ledger_template": "",
-    "_ledger_template_comment": "可选：项目自己的 07 账本模板，相对项目根。填了它，init 会按项目模板生成；留空则使用 verity 仓库的八列模板。模板文件必须存在，内容里的 marker 决定 check_evidence.py 的格式。"
+    "task_card_template": "",
+    "blocking_form_template": "",
+    "_ledger_template_comment": "可选：项目自己的 07 账本模板，相对项目根。填了它，init 会按项目模板生成；留空则使用 verity 仓库的 v1 十列模板。模板文件必须存在，内容里的 marker 决定 check_evidence.py 的格式。"
+  },
+  "ledger": {
+    "statuses": ["通过", "未交付-失败", "未交付-阻塞", "未覆盖"],
+    "conclusions": ["通过", "未交付（失败）", "未交付（阻塞）"],
+    "evidence_types": ["截图", "布局树", "像素", "DB", "日志", "性能"],
+    "confidences": ["高", "中", "低"],
+    "_comment": "可选：把状态/结论/证据类型/置信度收窄为 verity 支持值的子集；不写则用通用五状态（含带欠账）。项目验收建议用上面四状态、三结论。"
   },
   "device": {
     "entry": "<设备操作入口：项目内脚本路径、工具名或人工操作说明>",
