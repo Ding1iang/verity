@@ -183,10 +183,29 @@ def validate_task_name(task_name: str) -> str:
 
 
 def init_task(args: argparse.Namespace) -> int:
-    """执行 init：先完整渲染，再创建目录，避免模板错误留下半套文件。"""
+    """执行 init：先检查目标目录，再完整渲染，避免重复目录被覆盖或留下半套文件。"""
     try:
         task_name = validate_task_name(args.task_name)
-        today = date.today().isoformat()
+    except ValueError as error:
+        print(f"错误：{error}", file=sys.stderr)
+        return 2
+
+    today = date.today().isoformat()
+    parent = Path(args.dir).expanduser()
+    if not parent.is_absolute():
+        parent = Path.cwd() / parent
+    try:
+        parent = parent.resolve()
+    except OSError as error:
+        print(f"错误：无法解析父目录 {parent}：{error}", file=sys.stderr)
+        return 2
+    target = parent / f"{today}-{task_name}"
+    # 先拒绝重复目录：即使 adapter 或模板同时有问题，也不能覆盖已有任务。
+    if target.exists():
+        print(f"错误：目录已存在，拒绝覆盖：{target}", file=sys.stderr)
+        return 1
+
+    try:
         project, _ = read_project(args.adapter)
         head, head_ok = run_git_head()
         task_card = render_task_card(task_name, head, project, args.mode, today)
@@ -197,11 +216,7 @@ def init_task(args: argparse.Namespace) -> int:
         print(f"错误：{error}", file=sys.stderr)
         return 2
 
-    parent = Path(args.dir).expanduser()
-    if not parent.is_absolute():
-        parent = Path.cwd() / parent
     try:
-        parent = parent.resolve()
         parent.mkdir(parents=True, exist_ok=True)
     except OSError as error:
         print(f"错误：无法创建父目录 {parent}：{error}", file=sys.stderr)
@@ -209,11 +224,6 @@ def init_task(args: argparse.Namespace) -> int:
     if not parent.is_dir():
         print(f"错误：父目录不是目录：{parent}", file=sys.stderr)
         return 2
-
-    target = parent / f"{today}-{task_name}"
-    if target.exists():
-        print(f"错误：目录已存在，拒绝覆盖：{target}", file=sys.stderr)
-        return 1
 
     try:
         target.mkdir()
