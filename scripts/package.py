@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """verity 技能包打包检查与 zip 生成。
 
-规则（任务卡 t5）：文件数超过 30 或总大小超过 40 MB 时直接报错，不生成
-zip。优先用 `git ls-files` 取“已跟踪 + 未忽略”的文件，保证 .gitignore 里
+规则：文件数超过 60 或总大小超过 10 MB 时直接报错，不生成 zip。
+上限按自用开源仓库的口径设置，覆盖技能内容与 GitHub 协作文件。
+
+优先用 `git ls-files` 取“已跟踪 + 未忽略”的文件，保证 .gitignore 里
 的私有材料、凭据和构建产物不会被打进包；在没有 git 的目录里退回文件系统
 遍历，并套用同一组排除规则。
 
@@ -20,8 +22,8 @@ import zipfile
 from pathlib import Path
 from typing import Optional
 
-DEFAULT_MAX_FILES = 30
-DEFAULT_MAX_BYTES = 40 * 1024 * 1024
+DEFAULT_MAX_FILES = 60
+DEFAULT_MAX_BYTES = 10 * 1024 * 1024
 
 # 无 git 时的目录排除表；与 .gitignore 的意图保持一致。
 EXCLUDED_DIRS = {
@@ -157,14 +159,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--root", default=".", help="要打包的仓库根目录，默认当前目录")
     parser.add_argument("--output", help="zip 输出路径，默认 <root>/dist/verity.zip")
     parser.add_argument("--prefix", default="verity", help="zip 内的根目录名；传空字符串表示不套目录")
-    parser.add_argument("--max-files", type=int, default=DEFAULT_MAX_FILES, help="文件数上限，默认 30")
+    parser.add_argument("--max-files", type=int, default=DEFAULT_MAX_FILES, help="文件数上限，默认 60")
     parser.add_argument(
         "--max-bytes",
         type=int,
         default=DEFAULT_MAX_BYTES,
-        help="总大小上限（字节），默认 40 MB",
+        help="总大小上限（字节），默认 10 MB",
     )
-    parser.add_argument("--check", action="store_true", help="只统计和检查，不生成 zip")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--check", action="store_true", help="只统计和检查，不生成 zip")
+    mode.add_argument("--zip", action="store_true", help="生成 zip（不传参数时的默认行为）")
     args = parser.parse_args(argv)
 
     root = Path(args.root).expanduser().resolve()
