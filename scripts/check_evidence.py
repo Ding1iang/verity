@@ -649,6 +649,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     else:
         for issue in issues:
             print(issue.render(resolved))
+        field_errors = [issue for issue in errors if issue.code == "E_FIELD"]
+        if field_errors:
+            print(f"缺字段：{len(field_errors)} 处必填内容为空，请补齐后再检查。")
         if errors:
             print(f"检查失败：{len(errors)} 项错误，{len(warnings)} 项警告")
         else:
