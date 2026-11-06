@@ -2,7 +2,9 @@
 
 本文件记录 verity 的对外变更。版本号遵循语义化版本（`MAJOR.MINOR.PATCH`），格式参考 Keep a Changelog。
 
-## [未发布]
+## [v1.0.0] - 2026-11-06
+
+v1.0.0 把 verity 从可用骨架收口为可发布版本：默认 v1 十列四状态，检查器覆盖 commit 锚点、证据复用和证据自述缺口，覆盖总表能统计包结论，并补齐四个模式的示例与十类反例。
 
 ### 变更
 
@@ -12,7 +14,25 @@
 - 适配层支持直接发现 `verity-适配层.json`，新增任务卡/举证单模板路径与 `ledger` 枚举收窄；默认模板说明从八列改为 v1。
 - 新增发布模式示例 `examples/05-release`；新功能、修缺陷、验收、发布四个模式各带一个反例 fixture。
 - 新增 `scripts/anti_examples.py`，在临时目录生成十类反例并逐条断言错误码；新增 `docs/reviews/anti-examples.md` 预备清单。
-- `check_evidence.py` 增加截图可读性（`E_SCREENSHOT`）和证据自述缺口（`E_SCOPE_GAP` / `E_PROBE_MISSING` / `E_DEVICE_UNVERIFIED`）检查；README、贡献指南和 CI 同步五个示例与 56/60 文件读数。
+- `check_evidence.py` 增加截图可读性（`E_SCREENSHOT`）和证据自述缺口（`E_SCOPE_GAP` / `E_PROBE_MISSING` / `E_DEVICE_UNVERIFIED`）检查；README、贡献指南和 CI 同步五个示例与 57/60 文件读数。
+- 新增 `docs/reviews/clean-clone.md`，记录本机临时目录解压后的复跑结果。
+
+### 验证
+
+- `python3 scripts/selftest.py`：5/5 通过。
+- 五个示例账本：01 通过 3、02 通过 4、03 阻塞（通过 2 / 阻塞 1 / 不适用 1）、04 通过 1、05 通过 5。
+- `python3 scripts/anti_examples.py`：10/10 反例按预期报错。
+- `python3 scripts/check_coverage.py --selftest`：8/8 通过。
+- `bash tests/init-selftest.sh`：4/4 通过。
+- `python3 scripts/package.py --check`：57 / 60 文件，总大小小于 10 MB。
+- `python3 scripts/package.py --zip` 后解压到空临时目录，按 README 复跑 selftest、package 检查与五个示例，全部通过；zip 不含 `.git`、`__pycache__`、`.pyc`、临时文件或密钥。
+
+### 已知限制
+
+- `check_evidence.py` 只验形式，不验证据内容的真实性；真实性由复核人负责。
+- `check_coverage.py` 只核对结构与路径，不执行适配层里的命令，也不判断证据真假。
+- `package.py` 只统计文件数与体积，不判断内容是否敏感；敏感信息由 secret scan 与人工检查负责。
+- 示例中的版本号、读数和项目名都是演示数据，不能当作真实项目证据复用。
 
 ## [v0.2.0] - 2026-11-06
 
@@ -54,6 +74,8 @@ v0.2.0 让 verity 能接入真实项目：新增任务初始化、项目适配�
 - `check_coverage.py` 只核对结构与路径，不执行适配层里的命令，也不判断证据真假。
 
 ## [v0.1.0] - 2026-11-06
+
+> 历史版本说明：v0.1.0 是首个自用版本，以下保留当时的发布记录，供追溯使用。
 
 首个自用版本。目标是把“AI 说做完了，凭什么”落成一套可检查的交付流程。
 

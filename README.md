@@ -2,7 +2,7 @@
 
 给 AI 编码代理用的交付验收技能包。它不教怎么写代码，只回答一个问题：**当代理说“做完了”，凭什么？**
 
-verity 用任务卡先定靶，用证据分级判断结论能不能成立，最后只允许三种收口：通过、未通过、阻塞。核心只有一句：**结论只能比证据小。**
+verity 用任务卡先定靶，用证据分级判断结论能不能成立。v1 默认模板只写三种包结论：通过、未交付（失败）、未交付（阻塞）；检查器为兼容旧项目仍识别“带欠账/带欠账交付”，项目合同可用 `--strict` 关闭。旧八列账本保留通过、未通过、阻塞三态。核心只有一句：**结论只能比证据小。**
 
 ## 安装
 
@@ -66,7 +66,7 @@ python3 scripts/check_evidence.py examples/05-release/07-验收回归清单.md
 打开 `examples/03-blocking/07-验收回归清单.md`，重点看三处：
 
 1. **账本**：一行一个验收项，八列信息齐全；阻塞项的证据指向举证单。
-2. **收口**：结论必须是三态之一，计数要和账本行数对得上。
+2. **收口**：旧八列结论必须是三态之一（v1 默认模板用三包结论），计数要和账本行数对得上。
 3. **举证单**：`blocking-form.md` 里四个维度、正对照和解锁条件都填满，缺一项就只能记未通过。
 
 ### 第 4 步（约 2 分钟）：开始自己的任务
@@ -95,7 +95,7 @@ python3 scripts/package.py --check
 检查通过（--check 模式，未生成 zip）
 ```
 
-当前仓库实测为 56 / 60 文件；上限是 60 文件、10 MB。
+当前仓库实测为 57 / 60 文件；上限是 60 文件、10 MB。
 
 `--check` 只统计和校验，不生成压缩包。文件数或体积超过上限时会直接失败，不生成 zip。
 
@@ -107,7 +107,7 @@ python3 scripts/package.py --check
 |---|---|---|---|---|
 | 新功能 | 要不要做、做成什么样 | 把需求逐条改写成验收项，立任务卡 | 全部验收项有达标证据 | `references/new-feature.md` |
 | 修缺陷 | 为什么不符合预期 | 先复现并留下失败证据，再定位根因 | 原缺陷复现项与回归项都通过 | `references/bug-fix.md` |
-| 验收 | 现在能不能算完成 | 只取证判级，不改代码 | 三态结论写入 07 账本 | `references/acceptance.md` |
+| 验收 | 现在能不能算完成 | 只取证判级，不改代码 | v1 三包结论（旧八列三态）写入 07 账本 | `references/acceptance.md` |
 | 发布 | 这一批能不能对外 | 汇总已有账本，补版本、更新日志、回滚点 | 发布检查全过，账本归档 | `references/release.md` |
 
 选择方法：看当前必须回答哪个问题，只选一个入口。新功能和修缺陷在收尾时切到验收视角，发布前切到发布视角，但账本始终是同一份。
@@ -152,7 +152,7 @@ verity/
 ├── examples/                # 五个端到端示例
 ├── scripts/                 # init、自测、账本检查、覆盖检查、反例生成、打包检查（纯标准库）
 ├── tests/                   # init 命令自测（bash）
-├── docs/                    # 设计说明与外部来源清单
+├── docs/                    # 设计说明、外部来源与复核记录
 └── README.md
 ```
 
@@ -171,12 +171,13 @@ verity/
 
 - 技能入口：`SKILL.md`
 - 证据分级与假结论：`references/evidence.md`
-- 任务卡、状态与三态收口：`references/acceptance.md`
+- 任务卡、v1 四状态与包结论、旧八列三态：`references/acceptance.md`
 - 验收执行、批量与复测：`references/acceptance-run.md`
 - 视觉验收：`references/visual.md`
 - 纯视觉优化：`references/ui-improvement.md`
 - 行为与性能：`references/behavior-perf.md`
 - 十类反例预备清单：`docs/reviews/anti-examples.md`
+- 本机空目录复跑记录：`docs/reviews/clean-clone.md`
 - 新功能模式：`references/new-feature.md`
 - 修缺陷模式：`references/bug-fix.md`
 - 发布模式：`references/release.md`

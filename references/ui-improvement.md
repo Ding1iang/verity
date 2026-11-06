@@ -67,7 +67,7 @@
 - 清理本次临时截图、脚本和中间产物；保留的证据按任务卡登记。
 - 用户能感知的外观变化写进更新日志（按 `references/release.md` 的写法）；纯内部重构不写。
 - 关键改动按 `references/bug-fix.md` 的独立复核要求换一个上下文复核；复核意见只作参考，不替代验收。
-- 按 `references/acceptance.md` 落 07，三态收口；视觉项用 `visual.md` 的证据等级，不用“看起来顺眼”判通过。
+- 按 `references/acceptance.md` 落 07，v1 三包结论（旧八列三态）收口；视觉项用 `visual.md` 的证据等级，不用“看起来顺眼”判通过。
 
 ## 3. 常见失败
 

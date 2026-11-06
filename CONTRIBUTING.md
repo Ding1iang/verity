@@ -14,6 +14,8 @@ verity 是一套自用的交付验收技能包。欢迎提交缺陷报告、规�
 
 ```bash
 python3 scripts/selftest.py
+bash tests/init-selftest.sh
+python3 scripts/check_coverage.py --selftest
 python3 scripts/check_evidence.py examples/01-new-feature/07-验收回归清单.md
 python3 scripts/check_evidence.py examples/02-bug-fix/07-验收回归清单.md
 python3 scripts/check_evidence.py examples/03-blocking/07-验收回归清单.md
@@ -23,7 +25,7 @@ python3 scripts/anti_examples.py
 python3 scripts/package.py --check
 ```
 
-预期结果：自测 5/5 通过，五个示例账本退出码为 0，反例 10/10 按预期报错，打包检查显示 `文件数：56 / 60`（上限 60 文件、10 MB）。任何一项报错都不要提交。
+预期结果：自测 5/5、初始化自测 4/4、覆盖自测 8/8 通过，五个示例账本退出码为 0，反例 10/10 按预期报错，打包检查显示 `文件数：57 / 60`（上限 60 文件、10 MB）。任何一项报错都不要提交。
 
 ## 提交信息
 
@@ -31,7 +33,7 @@ python3 scripts/package.py --check
 
 ## 规则改动的额外要求
 
-- 改 `SKILL.md`、`references/` 或 `templates/` 时，说明对四种模式和七种状态的影响。
+- 改 `SKILL.md`、`references/` 或 `templates/` 时，说明对四种模式的影响；v1 默认模板是四状态三包结论（检查器兼容带欠账，项目合同用 `--strict` 关闭），旧八列是七状态三态。
 - 改 `scripts/` 时，补一个能让检查器报红的坏样本；只有好样本通过的改动不合并。
 - 改证据格式属于破坏性变更，先开 issue 讨论并升级版本号。
 
