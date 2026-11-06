@@ -1,0 +1,73 @@
+{
+  "schema": "verity-adapter/v1",
+  "_readme": "复制到 <项目根>/.verity/adapter.json 后填写。除 project.root 外，路径都相对项目根；project.root 相对本文件所在目录。本文件属于项目，不放进 verity 仓库。尖括号占位符必须替换。",
+  "project": {
+    "name": "<项目名>",
+    "root": "..",
+    "_root_comment": "相对 adapter.json 所在目录。放在 <项目根>/.verity/ 时写 ..；放在项目根时写 .。命令行传 --project-root 时以命令行为准。"
+  },
+  "baseline": {
+    "command": "git rev-parse HEAD",
+    "description": "<运行后输出单个 commit ID；没有 git 时换成项目自己的版本命令>"
+  },
+  "commands": {
+    "static": [
+      {
+        "id": "static-1",
+        "description": "<静态检查：类型检查、lint、格式检查>",
+        "command": "<在项目根执行的完整命令>",
+        "timeout_seconds": 300
+      }
+    ],
+    "contract": [],
+    "device": [
+      {
+        "id": "device-1",
+        "description": "<真机或模拟器上的检查>",
+        "command": "<在项目根执行的完整命令>",
+        "timeout_seconds": 600
+      }
+    ],
+    "build": [
+      {
+        "id": "build-1",
+        "description": "<构建、安装或截图>",
+        "command": "<在项目根执行的完整命令>",
+        "timeout_seconds": 900
+      }
+    ]
+  },
+  "paths": {
+    "ledger_root": "<07 账本根目录，相对项目根>",
+    "evidence_root": "<证据文件根目录，相对项目根>",
+    "coverage_master": "<覆盖总表路径，相对项目根>"
+  },
+  "device": {
+    "entry": "<设备操作入口：项目内脚本路径、工具名或人工操作说明>",
+    "_comment": "只写入口，不写设备序列号、账号、地址或凭据。没有设备时写“无设备操作”。"
+  },
+  "redaction": {
+    "rules": [
+      {
+        "pattern": "<正则表达式>",
+        "replace": "<替换文本>",
+        "description": "<脱敏对象：令牌、Cookie、内网地址、个人信息等>"
+      }
+    ],
+    "forbidden": [
+      "密码",
+      "令牌",
+      "Cookie",
+      "私钥",
+      "真实用户数据",
+      "个人信息截图"
+    ]
+  },
+  "modules": [
+    {
+      "id": "<module-id>",
+      "name": "<模块名>",
+      "in_use": true
+    }
+  ]
+}

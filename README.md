@@ -108,6 +108,22 @@ python3 scripts/package.py --check
 
 选择方法：看当前必须回答哪个问题，只选一个入口。新功能和修缺陷在收尾时切到验收视角，发布前切到发布视角，但账本始终是同一份。
 
+## 接到项目上
+
+verity 仓库只放通用规则；项目根、门禁命令、设备入口、07 目录、证据目录和脱敏规则都放项目自己的适配层。
+
+1. 复制 `templates/adapter.json` 到 `<项目根>/.verity/adapter.json`，按 `references/adapter.md` 填写。适配层只描述项目事实，不写凭据，也不复制进 verity 仓库。
+2. 复制 `templates/coverage-master.md` 到项目的验收目录，一行一个在用模块或用户路径。总表只记 07 是否存在、是否不适用，不写通过/失败；通过/失败仍只从 07 读。
+3. 检查覆盖关系：
+
+```bash
+python3 scripts/check_coverage.py <覆盖总表> \
+  --adapter <项目根>/.verity/adapter.json \
+  --project-root <项目根>
+```
+
+检查器只读适配层，不执行里面的命令；它查的是结构、路径和数量，不判断证据真假。
+
 ## 三个示例
 
 | 示例 | 演示什么 | 入口文件 |
@@ -123,10 +139,10 @@ python3 scripts/package.py --check
 ```text
 verity/
 ├── SKILL.md                 # 技能入口：何时用、四种模式、五步流程、三条硬规则
-├── references/              # 规则正文：证据、验收、四种模式、视觉、行为性能
-├── templates/               # 三份可复制模板：任务卡、07 账本、阻塞举证单
+├── references/              # 规则正文：证据、验收、四种模式、视觉、行为性能、项目适配层
+├── templates/               # 五份可复制模板：任务卡、07 账本、阻塞举证单、适配层、覆盖总表
 ├── examples/                # 三个端到端示例
-├── scripts/                 # init、自测、账本检查、打包检查（纯标准库）
+├── scripts/                 # init、自测、账本检查、覆盖检查、打包检查（纯标准库）
 ├── tests/                   # init 命令自测（bash）
 ├── docs/                    # 设计说明与外部来源清单
 └── README.md
@@ -149,5 +165,6 @@ verity/
 - 技能入口：`SKILL.md`
 - 证据分级与假结论：`references/evidence.md`
 - 任务卡、状态与三态收口：`references/acceptance.md`
+- 项目适配层契约：`references/adapter.md`
 - 设计说明与仓库边界：`docs/design.md`
 - 外部来源与核验日期：`docs/sources.md`
