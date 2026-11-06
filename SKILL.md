@@ -34,7 +34,7 @@ description: 当 AI 准备说完成时，用任务卡、证据分级、三态结
 
 ## 接到项目上
 
-项目专属事实（路径、门禁命令、设备入口、脱敏规则）写在项目自己的适配层：复制 `templates/adapter.json` 到项目的 `.verity/adapter.json`，按 `references/adapter.md` 填写，不复制进 verity 仓库。复制 `templates/coverage-master.md` 建覆盖总表，每个在用模块占一行，只记 07 是否存在、是否不适用；通过/失败仍只从 07 读。用 `scripts/check_coverage.py` 检查覆盖关系，它只查结构，不执行命令，也不改账本。
+项目专属事实（路径、门禁命令、设备入口、脱敏规则）写在项目自己的适配层：复制 `templates/adapter.json` 到项目的 `.verity/adapter.json`，按 `references/adapter.md` 填写，不复制进 verity 仓库。默认位置是 `<项目根>/.verity/adapter.json`；项目可以把适配层放在别处，并在命令里用 `--adapter <显式路径>` 覆盖默认值，显式路径优先。复制 `templates/coverage-master.md` 建覆盖总表，每个在用模块占一行，只记 07 是否存在、是否不适用；通过/失败仍只从 07 读。用 `scripts/check_coverage.py` 检查覆盖关系，它只查结构，不执行命令，也不改账本。
 
 ## 五步流程
 

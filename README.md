@@ -114,7 +114,7 @@ python3 scripts/package.py --check
 
 verity 仓库只放通用规则；项目根、门禁命令、设备入口、07 目录、证据目录和脱敏规则都放项目自己的适配层。
 
-1. 复制 `templates/adapter.json` 到 `<项目根>/.verity/adapter.json`，按 `references/adapter.md` 填写。适配层只描述项目事实，不写凭据，也不复制进 verity 仓库。
+1. 复制 `templates/adapter.json` 到 `<项目根>/.verity/adapter.json`，按 `references/adapter.md` 填写。适配层只描述项目事实，不写凭据，也不复制进 verity 仓库。项目把适配层放在别处时，命令里用 `--adapter <显式路径>` 覆盖默认值；显式路径优先，不要维护第二份配置。
 2. 复制 `templates/coverage-master.md` 到项目的验收目录，一行一个在用模块或用户路径。总表只记 07 是否存在、是否不适用，不写通过/失败；通过/失败仍只从 07 读。
 3. 检查覆盖关系：
 
