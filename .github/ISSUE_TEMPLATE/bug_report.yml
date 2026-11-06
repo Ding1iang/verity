@@ -1,0 +1,67 @@
+name: 缺陷报告
+description: 报告 verity 技能包、脚本或文档中的问题
+title: "[缺陷] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。提交前请先搜索现有 issue，并确认内容不含密码、令牌、Cookie、内部地址或真实用户数据。
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际现象
+      description: 看到了什么，和预期差在哪
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 从干净环境开始，按顺序写出命令和操作
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本或提交
+      description: 例如 v0.1.0 或提交哈希
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响范围
+      options:
+        - SKILL.md 与规则正文
+        - 检查、自测或打包脚本
+        - 模板或示例
+        - 文档与链接
+        - GitHub Actions 或发布流程
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 证据
+      description: 命令、退出码、文件路径或截图；没有证据的结论会按“待验证”处理
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索过现有 issue，没有重复
+          required: true
+        - label: 内容不含凭据、内部地址或真实用户数据
+          required: true

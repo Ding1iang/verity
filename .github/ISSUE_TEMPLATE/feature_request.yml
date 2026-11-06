@@ -1,0 +1,59 @@
+name: 功能建议
+description: 建议新的规则、模板、示例或工具能力
+title: "[建议] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        verity 只解决“交付结论如何被证据支撑”这一件事。与验收无关的功能建议可能不被接受。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 要解决什么问题
+      description: 当前哪里不够用，最好给出真实场景
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议做法
+      description: 你希望增加或修改什么
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 考虑过的替代方案
+      description: 现有规则或模板为什么不够，其他做法是什么
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响范围
+      options:
+        - SKILL.md 与规则正文
+        - 检查、自测或打包脚本
+        - 模板或示例
+        - 文档与链接
+        - GitHub Actions 或发布流程
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 怎么判断做成了
+      description: 至少一条可验证的验收判据
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 内容不含凭据、内部地址或真实用户数据
+          required: true
