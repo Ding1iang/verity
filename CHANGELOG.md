@@ -2,6 +2,45 @@
 
 本文件记录 verity 的对外变更。版本号遵循语义化版本（`MAJOR.MINOR.PATCH`），格式参考 Keep a Changelog。
 
+## [v0.2.0] - 2026-11-06
+
+v0.2.0 让 verity 能接入真实项目：新增任务初始化、项目适配层、覆盖总表检查和项目 v1 账本支持；通用八列账本继续可用。
+
+### 新增
+
+- `scripts/verity.py init`：按任务名、模式和可选适配层生成任务卡、07 账本、阻塞举证单和 `evidence/` 目录；目录已存在时拒绝覆盖。
+- 项目适配层：`templates/adapter.json` 与 `references/adapter.md`，集中记录项目根、门禁命令、设备入口、07/证据目录和脱敏规则；默认读取项目根 `.verity/adapter.json`，可用 `--adapter` 显式覆盖。
+- 覆盖总表：`templates/coverage-master.md` 与 `scripts/check_coverage.py`，按在用模块检查 07 是否存在、是否不适用，并检查重复认领和数量对账。
+- 项目 v1 十列账本：`check_evidence.py` 支持项目自己的十列五档格式，按 marker 自动识别，也可用 `--format v1` 或 `--adapter` 指定；通用八列仍为默认格式。
+- 验收执行参考 `references/acceptance-run.md`：补记锚点、备数据、选通道、单条执行、批量验收、失败归因、复测和证据复用。
+- 视觉优化参考 `references/ui-improvement.md`：只改呈现、不改行为时的设计侧与落地侧流程。
+- 项目示例 `examples/04-project-v1` 与 `tests/init-selftest.sh`。
+
+### 变更
+
+- `SKILL.md` 增加“说真话，不迎合”、项目接入说明，并引用验收执行参考。
+- `README.md` 快速开始改用 `init` 命令，补充第四个示例与项目接入步骤，并更新模板和脚本说明。
+- `check_evidence.py` 现在能读取项目账本模板并按格式检查；通用八列账本无需额外参数。
+- `acceptance.md` 补充扩展列、项目 v1 账本和仓库外证据登记规则；`bug-fix.md`、`new-feature.md`、`visual.md` 补充开工前摸底、计划审查和视觉优化分流。
+
+### 修复
+
+- `init` 在写入前拒绝已存在的任务目录，避免覆盖已有任务。
+- 空账本检查提示补充缺失字段说明，模板原样运行时能指出待填项。
+
+### 验证
+
+- `python3 scripts/selftest.py`：5/5 通过。
+- 四个示例账本：01 通过 3、02 通过 4、03 阻塞（通过 2 / 阻塞 1 / 不适用 1）、04 通过 1。
+- `bash tests/init-selftest.sh`：4/4 通过。
+- `python3 scripts/package.py --check`：47 / 60 文件，总大小小于 10 MB。
+
+### 已知限制
+
+- `check_evidence.py` 仍不校验证据是否来自当前提交（HEAD）；跨提交复用证据必须由流程层按 F2 独立复核。v0.1.0 曾计划在 v0.2 补脚本锚点，本版未实现，顺延到后续版本。
+- 项目 v1 十列是项目自己的 schema，不是通用八列的扩展；两种格式不要混写，通用场景继续用八列。
+- `check_coverage.py` 只核对结构与路径，不执行适配层里的命令，也不判断证据真假。
+
 ## [v0.1.0] - 2026-11-06
 
 首个自用版本。目标是把“AI 说做完了，凭什么”落成一套可检查的交付流程。
