@@ -18,10 +18,12 @@ python3 scripts/check_evidence.py examples/01-new-feature/07-验收回归清单.
 python3 scripts/check_evidence.py examples/02-bug-fix/07-验收回归清单.md
 python3 scripts/check_evidence.py examples/03-blocking/07-验收回归清单.md
 python3 scripts/check_evidence.py examples/04-project-v1/07-验收回归清单.md
+python3 scripts/check_evidence.py examples/05-release/07-验收回归清单.md
+python3 scripts/anti_examples.py
 python3 scripts/package.py --check
 ```
 
-预期结果：自测 5/5 通过，四个示例账本退出码为 0，打包检查显示 `文件数：47 / 60`（上限 60 文件、10 MB）。任何一项报错都不要提交。
+预期结果：自测 5/5 通过，五个示例账本退出码为 0，反例 10/10 按预期报错，打包检查显示 `文件数：56 / 60`（上限 60 文件、10 MB）。任何一项报错都不要提交。
 
 ## 提交信息
 

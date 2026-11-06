@@ -40,6 +40,8 @@
 | `references/acceptance-run.md` | 无外部来源 | 操作、观察、批量验收和复测规则是本技能包约定，不冒充外部标准 |
 | `references/ui-improvement.md` | 无外部来源 | 设计侧四步和落地侧四步是本技能包约定，来自通用流程迁移，不引用外部规范 |
 | `references/evidence.md`、`references/acceptance.md` | 无外部来源 | 证据分级、七状态、三态交付是本技能包约定 |
+| `docs/reviews/anti-examples.md` | 无外部来源 | 十类反例是检查器的内部回归清单，不冒充外部标准 |
+| `examples/05-release/README.md` | S10、S11 | 版本号语义与回滚提交方式的示例；示例读数为演示数据 |
 
 ## 4. 不采用的说法
 

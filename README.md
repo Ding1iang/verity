@@ -39,25 +39,27 @@ python3 scripts/selftest.py
 
 这一步会用好样本和四个坏样本验证检查器：缺证据、假路径、旧结论词、重复状态源都必须被拦住。
 
-### 第 2 步（约 3 分钟）：跑四个示例
+### 第 2 步（约 3 分钟）：跑五个示例
 
 ```bash
 python3 scripts/check_evidence.py examples/01-new-feature/07-验收回归清单.md
 python3 scripts/check_evidence.py examples/02-bug-fix/07-验收回归清单.md
 python3 scripts/check_evidence.py examples/03-blocking/07-验收回归清单.md
 python3 scripts/check_evidence.py examples/04-project-v1/07-验收回归清单.md
+python3 scripts/check_evidence.py examples/05-release/07-验收回归清单.md
 ```
 
-预期四行摘要：
+预期五行摘要：
 
 ```text
 [OK] <仓库根>/examples/01-new-feature/07-验收回归清单.md：3 行，结论=通过（通过 3）
 [OK] <仓库根>/examples/02-bug-fix/07-验收回归清单.md：4 行，结论=通过（通过 4）
 [OK] <仓库根>/examples/03-blocking/07-验收回归清单.md：4 行，结论=阻塞（通过 2 / 阻塞 1 / 不适用 1）
 [OK] <仓库根>/examples/04-project-v1/07-验收回归清单.md：1 行，结论=通过（通过 1）
+[OK] <仓库根>/examples/05-release/07-验收回归清单.md：5 行，结论=通过（通过 5）
 ```
 
-四条命令的退出码都是 0。这里的 0 只表示账本格式合规、状态自洽，**不表示交付通过**；第三个示例的结论明确是阻塞。第四个示例是项目 v1 十列格式，检查器按 marker 自动识别；也可以用 `--format v1 --root examples/04-project-v1` 显式指定。
+五条命令的退出码都是 0。这里的 0 只表示账本格式合规、状态自洽，**不表示交付通过**；第三个示例的结论明确是阻塞。第四个示例是项目 v1 十列格式，检查器按 marker 自动识别；也可以用 `--format v1 --root examples/04-project-v1` 显式指定。第五个示例展示发布模式的五项检查，不包含真实的构建或发布动作。
 
 ### 第 3 步（约 2 分钟）：看懂一份账本
 
@@ -93,7 +95,7 @@ python3 scripts/package.py --check
 检查通过（--check 模式，未生成 zip）
 ```
 
-当前仓库实测为 47 / 60 文件、271.7 KB；上限是 60 文件、10 MB。
+当前仓库实测为 56 / 60 文件；上限是 60 文件、10 MB。
 
 `--check` 只统计和校验，不生成压缩包。文件数或体积超过上限时会直接失败，不生成 zip。
 
@@ -128,7 +130,7 @@ python3 scripts/check_coverage.py <覆盖总表> \
 
 检查器只读适配层，不执行里面的命令；它查的是结构、路径和数量，不判断证据真假。
 
-## 四个示例
+## 五个示例
 
 | 示例 | 演示什么 | 入口文件 |
 |---|---|---|
@@ -136,6 +138,7 @@ python3 scripts/check_coverage.py <覆盖总表> \
 | 修缺陷 | 从复现、根因四问到最小修复和独立复核的完整链路 | `examples/02-bug-fix/README.md` |
 | 阻塞 | 四维取证与正对照怎么写，为什么阻塞不是通过 | `examples/03-blocking/README.md` |
 | 项目 v1 十列 | 项目自己的十列账本如何被通用检查器识别，演示显式格式与适配层接入 | `examples/04-project-v1/README.md` |
+| 发布 | 验收通过后，版本、更新日志、干净构建、回滚点与发布后冒烟如何逐项留证 | `examples/05-release/README.md` |
 
 每个示例目录都含输入、填写完成的任务卡、07 账本和预期输出；阻塞示例另有举证单。示例里的项目和读数是演示数据，用来说明格式，真实任务必须换成自己的实测记录。
 
@@ -146,8 +149,8 @@ verity/
 ├── SKILL.md                 # 技能入口：何时用、四种模式、五步流程、三条硬规则
 ├── references/              # 规则正文：证据、验收、验收执行、四种模式、视觉、视觉优化、行为性能、项目适配层
 ├── templates/               # 五份可复制模板：任务卡、07 账本、阻塞举证单、适配层、覆盖总表
-├── examples/                # 四个端到端示例
-├── scripts/                 # init、自测、账本检查、覆盖检查、打包检查（纯标准库）
+├── examples/                # 五个端到端示例
+├── scripts/                 # init、自测、账本检查、覆盖检查、反例生成、打包检查（纯标准库）
 ├── tests/                   # init 命令自测（bash）
 ├── docs/                    # 设计说明与外部来源清单
 └── README.md
@@ -155,13 +158,12 @@ verity/
 
 ## 限制
 
-- **检查器只查形式，不查真假。** `check_evidence.py` 能验证默认 v1 十列或旧八列的字段、状态、证据文件是否存在、commit 是否真实且为 HEAD 祖先、证据是否早于被测版本、旧结论词和计数是否一致；它无法证明证据内容真实、充分或覆盖了声明范围。真实性由复核人负责。
+- **检查器只查形式，不查真假。** `check_evidence.py` 能验证默认 v1 十列或旧八列的字段、状态、证据文件是否存在、截图是否有可读图片、证据自述是否只覆盖主路径/用门禁替代探针/设备未验却写通过、commit 是否真实且为 HEAD 祖先、证据是否早于被测版本、旧结论词和计数是否一致；它无法证明证据内容真实、充分或覆盖了声明范围。真实性由复核人负责。
 - **不自动取证，也不自动改账本。** 证据要由执行者按判据实际跑出来；检查器只报错，不替人补证据。
 - **不替代人的发布决策。** 发布模式给出检查项和账本要求，最终是否对外由人决定。
 - **不绑定语言、框架和平台。** 示例用 Python 命令行只是为了能直接跑；规则本身与语言无关。
 - **示例是演示数据。** 示例中的版本号、测试读数和项目名不是真实项目记录，不能当作证据复用。
 - **一次交付一份 07。** 后续批次新建账本并引用旧批次，不覆盖历史；同一目录出现第二份 07 会被检查器判错。
-- **脚本层不校验提交锚点。** `check_evidence.py` 只校验账本自身，不能证明证据来自当前提交（HEAD）；跨提交复用证据必须由流程层按 F2 独立复核。脚本锚点在 v0.2 未实现，顺延到后续版本。
 - **项目专属材料不进仓库。** 设备适配、真实数据、凭据、内部地址和具体项目结构都留在仓库之外，判断标准是“换个项目、换台机器还能用吗”。详见 `docs/design.md` 第 4 节。
 - **仓库在自验收通过前保持私有。** 自验收完成并复核通过后才考虑开源，详见 `docs/design.md` 第 5 节。
 
@@ -174,6 +176,7 @@ verity/
 - 视觉验收：`references/visual.md`
 - 纯视觉优化：`references/ui-improvement.md`
 - 行为与性能：`references/behavior-perf.md`
+- 十类反例预备清单：`docs/reviews/anti-examples.md`
 - 新功能模式：`references/new-feature.md`
 - 修缺陷模式：`references/bug-fix.md`
 - 发布模式：`references/release.md`

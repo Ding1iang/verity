@@ -49,6 +49,21 @@ python3 scripts/check_evidence.py examples/02-bug-fix/07-验收回归清单.md
 
 退出码为 0。
 
+## 反例
+
+修复后重新跑一遍就写通过，但如果证据日期早于本次 commit，就是复用了旧证据。下面这个账本故意把行日期写成 2026-10-01，并把 commit 指向一个真实的历史提交：
+
+```bash
+python3 scripts/check_evidence.py examples/02-bug-fix/bad-old-evidence/07-验收回归清单.md
+```
+
+预期看到 `E_STALE`：
+
+```text
+[FAIL] .../bad-old-evidence/07-验收回归清单.md:29 [E_STALE] 证据日期 2026-10-01 早于 commit 日期 2026-11-06，不能复用旧证据
+检查失败：1 项错误，0 项警告
+```
+
 ## 这个例子演示了什么
 
 - 先复现再动手：`02` 里同时写了预期和实际，失败可重复。

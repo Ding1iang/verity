@@ -10,6 +10,9 @@
 - `check_evidence.py` 增加 commit 真实性/祖先校验、证据 mtime 复用拦截、`--strict` 拒绝欠账；`未覆盖` 收口按 `未交付（失败）` 判定。
 - `check_coverage.py` 增加 07 包结论统计、批次目录与任务卡/07 互链检查；摘要输出“账本 N/N、结论通过/失败/阻塞”。
 - 适配层支持直接发现 `verity-适配层.json`，新增任务卡/举证单模板路径与 `ledger` 枚举收窄；默认模板说明从八列改为 v1。
+- 新增发布模式示例 `examples/05-release`；新功能、修缺陷、验收、发布四个模式各带一个反例 fixture。
+- 新增 `scripts/anti_examples.py`，在临时目录生成十类反例并逐条断言错误码；新增 `docs/reviews/anti-examples.md` 预备清单。
+- `check_evidence.py` 增加截图可读性（`E_SCREENSHOT`）和证据自述缺口（`E_SCOPE_GAP` / `E_PROBE_MISSING` / `E_DEVICE_UNVERIFIED`）检查；README、贡献指南和 CI 同步五个示例与 56/60 文件读数。
 
 ## [v0.2.0] - 2026-11-06
 

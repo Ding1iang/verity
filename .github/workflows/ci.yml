@@ -26,6 +26,9 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+        with:
+          # 旧证据反例依赖历史提交，浅克隆会让 commit 校验报 E_COMMIT。
+          fetch-depth: 0
 
       - name: 安装 Python
         uses: actions/setup-python@v5
@@ -35,13 +38,17 @@ jobs:
       - name: 运行自测
         run: python scripts/selftest.py
 
-      - name: 校验四个示例账本
+      - name: 校验五个示例账本
         run: |
           python scripts/check_evidence.py examples/01-new-feature/07-验收回归清单.md
           python scripts/check_evidence.py examples/02-bug-fix/07-验收回归清单.md
           python scripts/check_evidence.py examples/03-blocking/07-验收回归清单.md
           python scripts/check_evidence.py examples/04-project-v1/07-验收回归清单.md \
             --format v1 --root examples/04-project-v1
+          python scripts/check_evidence.py examples/05-release/07-验收回归清单.md
+
+      - name: 运行十类反例
+        run: python scripts/anti_examples.py
 
   markdown-links:
     name: Markdown 链接
@@ -62,6 +69,9 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+        with:
+          # 旧证据反例依赖历史提交，浅克隆会让 commit 校验报 E_COMMIT。
+          fetch-depth: 0
 
       - name: 安装 Python
         uses: actions/setup-python@v5

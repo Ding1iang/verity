@@ -9,7 +9,8 @@
 4. 旧结论词：出现“通过（含残余）”“基本可用”等直接判错；
 5. 重复状态源：同一目录多份 07 账本、同一账本多个账本段或重复 ID；
 6. 版本锚点：v1 的 commit 必须是真实 git 对象，并等于 HEAD 或为其祖先；
-7. 证据时效：证据日期或文件 mtime 早于 commit 日期时按旧证据拒绝。
+7. 证据时效：证据日期或文件 mtime 早于 commit 日期时按旧证据拒绝；
+8. 证据自述：v1 的截图必须有可读图片，且不能自述“只跑主路径”“门禁全绿没跑探针”“设备未验”却写通过。
 
 默认按账本内容自动识别格式：带 `acceptance-evidence: v1` marker 或
 “单项验收（证据账本）”段的按 v1 十列检查，其余按通用八列检查。
@@ -113,6 +114,16 @@ V1_PLACEHOLDER_CONCLUSIONS = {
 V1_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*-[0-9]{2,3}$")
 V1_COMMIT_RE = re.compile(r"^(?:[0-9a-fA-F]{7,40}|工作区)$")
 V1_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+# 截图类证据必须能落到一张真实图片上。只认常见图片后缀，并要求文件非空；
+# “见截图”“截图如下”这类自述不算证据，防止用文字冒充截图。
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}
+
+# 自述缺口短语：这些话出现在“通过/带欠账”的证据列里，说明证据边界没有
+# 覆盖验收项本身，不能作为通过依据。只做保守的短语命中，不改 legacy 行为。
+SCOPE_GAP_PHRASES = ("只跑了主路径", "只跑主路径", "仅跑主路径", "只覆盖主路径", "只验证主路径")
+PROBE_MISSING_PHRASES = ("没跑探针", "未跑探针", "没有跑探针", "未执行探针", "没做探针", "没探针", "无探针", "没有探针")
+DEVICE_UNVERIFIED_PHRASES = ("设备未验", "设备没验", "设备未验证", "未上设备", "没上设备", "未在设备")
 
 # 尚未产生结论、允许证据列为空的状态。
 PENDING_STATUSES = {"待验", "验中", "待定"}
@@ -357,6 +368,62 @@ def resolve_existing_path(candidate: str, root: Path, ledger_dir: Path) -> Optio
 def path_exists(candidate: str, root: Path, ledger_dir: Path) -> bool:
     """证据路径允许按仓库根相对，也允许按账本所在目录相对。"""
     return resolve_existing_path(candidate, root, ledger_dir) is not None
+
+
+def has_readable_image(evidence: str, root: Path, ledger_dir: Path) -> bool:
+    """判断证据里是否至少有一张存在且非空的图片文件。
+
+    截图证据的关键是“图能打开”，不是“文字里写了截图”。这里只做文件级
+    检查，像素内容仍由对应判据门禁负责；空文件同样视为不可读。
+    """
+    for candidate in extract_paths(evidence):
+        resolved = resolve_existing_path(candidate, root, ledger_dir)
+        if resolved is None or resolved.suffix.lower() not in IMAGE_SUFFIXES:
+            continue
+        try:
+            if resolved.stat().st_size > 0:
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def self_report_gap_issues(evidence: str, status: str, item_id: str, line: int) -> list[Issue]:
+    """返回证据自述里暴露出的覆盖缺口。
+
+    只在 v1 的“通过/带欠账”行调用：失败和阻塞本来就允许写清缺口，
+    不能把它们再判成“自述缺口”。短语按去空白后的文本匹配，避免
+    “只跑了 主路径”这种排版差异漏检。
+    """
+    if status not in {"通过", "带欠账"}:
+        return []
+    compact = re.sub(r"\s+", "", evidence)
+    issues: list[Issue] = []
+    if any(phrase in compact for phrase in SCOPE_GAP_PHRASES):
+        issues.append(
+            Issue(
+                "E_SCOPE_GAP",
+                f"{item_id or '该行'} 的证据自述只覆盖主路径，不能支撑整个验收项通过",
+                line,
+            )
+        )
+    if "门禁全绿" in compact and any(phrase in compact for phrase in PROBE_MISSING_PHRASES):
+        issues.append(
+            Issue(
+                "E_PROBE_MISSING",
+                f"{item_id or '该行'} 只写了门禁全绿，但自述没跑探针；门禁不能替代探针结论",
+                line,
+            )
+        )
+    if any(phrase in compact for phrase in DEVICE_UNVERIFIED_PHRASES):
+        issues.append(
+            Issue(
+                "E_DEVICE_UNVERIFIED",
+                f"{item_id or '该行'} 自述设备未验证，不能写成通过",
+                line,
+            )
+        )
+    return issues
 
 
 def git_commit_date(root: Path, commit: str) -> tuple[Optional[date], Optional[str]]:
@@ -815,6 +882,25 @@ def check_v1_ledger(
                         )
                     else:
                         evidence_paths.append(resolved_path)
+
+                # 截图不是“写一句见截图”就算数：必须能解析出一张真实、
+                # 非空的图片文件。路径不存在会同时命中 E_EVIDENCE_PATH。
+                if (
+                    status in {"通过", "带欠账"}
+                    and evidence_type == "截图"
+                    and not has_readable_image(evidence, root, ledger_dir)
+                ):
+                    issues.append(
+                        Issue(
+                            "E_SCREENSHOT",
+                            f"{item_id or '该行'} 的证据类型是截图，但没有可读的截图文件",
+                            number,
+                        )
+                    )
+
+                # 证据自述里的“只跑主路径”“门禁全绿没跑探针”“设备未验”
+                # 本身就是覆盖缺口，不能靠状态栏写“通过”掩盖。
+                issues.extend(self_report_gap_issues(evidence, status, item_id, number))
 
                 # 旧证据不能复用：证据日期和文件 mtime 都不能早于 commit 日期。
                 # 同一天内不按小时卡，避免“上午产出证据、下午提交基线”的正常流程误报。

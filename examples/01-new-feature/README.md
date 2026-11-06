@@ -42,6 +42,21 @@ python3 scripts/check_evidence.py examples/01-new-feature/07-验收回归清单.
 
 退出码为 0。如果出现任何 `[FAIL]` 开头的行，按提示修账本，不要修改检查器来迁就账本。
 
+## 反例
+
+只跑主路径却写成通过，是“证据边界小于验收项”的典型错误。下面这个账本故意只写“只跑了主路径”：
+
+```bash
+python3 scripts/check_evidence.py examples/01-new-feature/bad-main-path/07-验收回归清单.md
+```
+
+预期看到 `E_SCOPE_GAP`，而不是 `[OK]`：
+
+```text
+[FAIL] .../bad-main-path/07-验收回归清单.md:29 [E_SCOPE_GAP] ... 的证据自述只覆盖主路径，不能支撑整个验收项通过
+检查失败：1 项错误，0 项警告
+```
+
 ## 这个例子演示了什么
 
 - 验收项写成“给定……应得到……”，每条都有最低证据和取证方式。
