@@ -68,15 +68,13 @@ python3 scripts/check_evidence.py examples/03-blocking/07-验收回归清单.md
 ### 第 4 步（约 2 分钟）：开始自己的任务
 
 ```bash
-mkdir -p tmp/my-task
-cp templates/task-card.md tmp/my-task/task-card.md
-cp templates/07-acceptance.md tmp/my-task/07-验收回归清单.md
+python3 scripts/verity.py init "示例任务" --mode acceptance --dir tmp
 ```
 
-按 `examples/` 里的样子填写任务卡和账本，然后执行：
+这条命令会生成 `tmp/<日期>-示例任务/`，里面有任务卡、空账本、举证单和 `evidence/`。按 `examples/` 里的样子填写任务卡和账本，然后执行：
 
 ```bash
-python3 scripts/check_evidence.py tmp/my-task/07-验收回归清单.md
+python3 scripts/check_evidence.py "tmp/<日期>-示例任务/07-验收回归清单.md"
 ```
 
 模板原样运行时检查器会报错，因为每个验收项都还没填 ID、判据、最低证据、证据、状态和复核人。这是预期行为，不是安装失败；逐行填完再跑，直到出现 `[OK]`。
@@ -90,9 +88,10 @@ python3 scripts/package.py --check
 预期包含：
 
 ```text
-文件数：35 / 60
 检查通过（--check 模式，未生成 zip）
 ```
+
+上面的“文件数”应不超过 60。
 
 `--check` 只统计和校验，不生成压缩包。文件数或体积超过上限时会直接失败，不生成 zip。
 
@@ -127,7 +126,7 @@ verity/
 ├── references/              # 规则正文：证据、验收、四种模式、视觉、行为性能
 ├── templates/               # 三份可复制模板：任务卡、07 账本、阻塞举证单
 ├── examples/                # 三个端到端示例
-├── scripts/                 # 自测、账本检查、打包检查（纯标准库）
+├── scripts/                 # init、自测、账本检查、打包检查（纯标准库）
 ├── docs/                    # 设计说明与外部来源清单
 └── README.md
 ```
