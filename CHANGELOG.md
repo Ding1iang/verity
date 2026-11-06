@@ -14,7 +14,7 @@ v1.0.0 把 verity 从可用骨架收口为可发布版本：默认 v1 十列四�
 - 适配层支持直接发现 `verity-适配层.json`，新增任务卡/举证单模板路径与 `ledger` 枚举收窄；默认模板说明从八列改为 v1。
 - 新增发布模式示例 `examples/05-release`；新功能、修缺陷、验收、发布四个模式各带一个反例 fixture。
 - 新增 `scripts/anti_examples.py`，在临时目录生成十类反例并逐条断言错误码；新增 `docs/reviews/anti-examples.md` 预备清单。
-- `check_evidence.py` 增加截图可读性（`E_SCREENSHOT`）和证据自述缺口（`E_SCOPE_GAP` / `E_PROBE_MISSING` / `E_DEVICE_UNVERIFIED`）检查；README、贡献指南和 CI 同步五个示例与 57/60 文件读数。
+- `check_evidence.py` 增加截图可读性（`E_SCREENSHOT`）和证据自述缺口（`E_SCOPE_GAP` / `E_PROBE_MISSING` / `E_DEVICE_UNVERIFIED`）检查；README、贡献指南与本地验证覆盖五个示例与 57/60 文件读数；CI 保持四示例，并运行自测、打包、链接与密钥扫描。
 - 新增 `docs/reviews/clean-clone.md`，记录本机临时目录解压后的复跑结果。
 
 ### 验证
@@ -75,7 +75,7 @@ v0.2.0 让 verity 能接入真实项目：新增任务初始化、项目适配�
 
 ## [v0.1.0] - 2026-11-06
 
-> 历史版本说明：v0.1.0 是首个自用版本，以下保留当时的发布记录，供追溯使用。
+> 历史版本说明：v0.1.0 的 tag 与 Release 未保留，历史版本不提供；以下内容仅保留当时的版本记录，不能按 tag 复现。
 
 首个自用版本。目标是把“AI 说做完了，凭什么”落成一套可检查的交付流程。
 
