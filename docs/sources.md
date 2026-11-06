@@ -37,6 +37,8 @@
 | `references/visual.md` | S1–S9、S12 | 视觉判据、对比度、焦点、目标尺寸、字体放大、回流、减少动效、焦点遮挡 |
 | `references/release.md` | S10、S11 | 版本号语义、回滚提交方式；该文件以概念引用为主 |
 | `references/behavior-perf.md` | 无外部来源 | p50/p95、样本数门槛和判定表是本技能包约定，不冒充外部标准 |
+| `references/acceptance-run.md` | 无外部来源 | 操作、观察、批量验收和复测规则是本技能包约定，不冒充外部标准 |
+| `references/ui-improvement.md` | 无外部来源 | 设计侧四步和落地侧四步是本技能包约定，来自通用流程迁移，不引用外部规范 |
 | `references/evidence.md`、`references/acceptance.md` | 无外部来源 | 证据分级、七状态、三态交付是本技能包约定 |
 
 ## 4. 不采用的说法

@@ -108,6 +108,8 @@ python3 scripts/package.py --check
 
 选择方法：看当前必须回答哪个问题，只选一个入口。新功能和修缺陷在收尾时切到验收视角，发布前切到发布视角，但账本始终是同一份。
 
+纯视觉优化（“觉得丑”类）不是第五种模式：不改业务行为、不加能力时，设计侧和落地侧走 `references/ui-improvement.md`，验收仍按 `references/visual.md`。
+
 ## 接到项目上
 
 verity 仓库只放通用规则；项目根、门禁命令、设备入口、07 目录、证据目录和脱敏规则都放项目自己的适配层。
@@ -139,7 +141,7 @@ python3 scripts/check_coverage.py <覆盖总表> \
 ```text
 verity/
 ├── SKILL.md                 # 技能入口：何时用、四种模式、五步流程、三条硬规则
-├── references/              # 规则正文：证据、验收、四种模式、视觉、行为性能、项目适配层
+├── references/              # 规则正文：证据、验收、验收执行、四种模式、视觉、视觉优化、行为性能、项目适配层
 ├── templates/               # 五份可复制模板：任务卡、07 账本、阻塞举证单、适配层、覆盖总表
 ├── examples/                # 三个端到端示例
 ├── scripts/                 # init、自测、账本检查、覆盖检查、打包检查（纯标准库）
@@ -165,6 +167,13 @@ verity/
 - 技能入口：`SKILL.md`
 - 证据分级与假结论：`references/evidence.md`
 - 任务卡、状态与三态收口：`references/acceptance.md`
+- 验收执行、批量与复测：`references/acceptance-run.md`
+- 视觉验收：`references/visual.md`
+- 纯视觉优化：`references/ui-improvement.md`
+- 行为与性能：`references/behavior-perf.md`
+- 新功能模式：`references/new-feature.md`
+- 修缺陷模式：`references/bug-fix.md`
+- 发布模式：`references/release.md`
 - 项目适配层契约：`references/adapter.md`
 - 设计说明与仓库边界：`docs/design.md`
 - 外部来源与核验日期：`docs/sources.md`
