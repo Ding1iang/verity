@@ -38,6 +38,7 @@ INIT_EPILOG = """三种用法：
 
 --mode 可选：new-feature（新功能）、bug-fix（修缺陷）、acceptance（验收）、release（发布）。
 --adapter 是项目侧 JSON 文件，至少包含 project 或 project.name；适配文件不放进本仓库。
+若 adapter 的 paths.ledger_template 指向项目账本模板，则生成项目模板；否则用本仓库八列模板。
 """
 
 
@@ -75,10 +76,15 @@ def run_git_head() -> tuple[str, bool]:
     return "未取到", False
 
 
-def read_project(adapter_path: Optional[str]) -> tuple[str, bool]:
-    """读取项目名；兼容简写 project 字符串和适配层模板的 project.name。"""
+def read_adapter(adapter_path: Optional[str]) -> tuple[str, Optional[Path]]:
+    """读取项目名与可选的账本模板路径。
+
+    project 兼容顶层字符串和 project.name；paths.ledger_template 是项目侧
+    可选的十列账本模板，路径相对 project.root（缺省为 adapter 所在目录）。
+    模板不存在时直接报错，避免 init 生成半套或退回错误格式。
+    """
     if not adapter_path:
-        return "未提供", False
+        return "未提供", None
     path = Path(adapter_path).expanduser()
     if not path.is_file():
         raise ValueError(f"adapter 文件不存在：{path}")
@@ -102,7 +108,29 @@ def read_project(adapter_path: Optional[str]) -> tuple[str, bool]:
         raise ValueError("adapter 缺少非空的 project 或 project.name 字段")
     if any(character in project for character in "\r\n|"):
         raise ValueError("adapter 的项目名不能包含换行或表格竖线")
-    return project, True
+
+    # 项目根默认是 adapter 所在目录；适配层模板通常写 "../.." 指到项目根。
+    project_root = path.parent
+    raw_root = data.get("project", {}).get("root") if isinstance(data.get("project"), dict) else None
+    if isinstance(raw_root, str) and raw_root.strip():
+        project_root = (path.parent / raw_root.strip()).resolve()
+
+    ledger_template: Optional[Path] = None
+    raw_paths = data.get("paths")
+    raw_template = raw_paths.get("ledger_template") if isinstance(raw_paths, dict) else None
+    if raw_template is not None:
+        if not isinstance(raw_template, str) or not raw_template.strip():
+            raise ValueError("adapter 的 paths.ledger_template 必须是非空字符串")
+        ledger_template = (project_root / raw_template.strip()).resolve()
+        if not ledger_template.is_file():
+            raise ValueError(f"adapter 指定的账本模板不存在：{ledger_template}")
+    return project, ledger_template
+
+
+def read_project(adapter_path: Optional[str]) -> tuple[str, bool]:
+    """兼容旧调用：只返回项目名和是否传了 adapter。"""
+    project, _ = read_adapter(adapter_path)
+    return project, bool(adapter_path)
 
 
 def mode_label(mode: str) -> str:
@@ -142,8 +170,52 @@ def render_task_card(
     return text
 
 
-def render_ledger(task_name: str, head: str, project: str, mode: str) -> str:
-    """按 07 模板生成空账本；账本行、结论和计数保持模板原样。"""
+def read_file_template(path: Path, label: str) -> str:
+    """读取项目侧模板；与仓库模板一样，缺失时抛可读异常。"""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise ValueError(f"读不到{label} {path}：{error}") from error
+
+
+def render_ledger(
+    task_name: str,
+    head: str,
+    project: str,
+    mode: str,
+    ledger_template: Optional[Path] = None,
+    today: Optional[str] = None,
+) -> str:
+    """按 07 模板生成空账本；项目 v1 模板与仓库八列模板都只填已知信息。"""
+    if ledger_template is not None:
+        text = read_file_template(ledger_template, "项目账本模板")
+        text = replace_once(
+            text,
+            "# 07 验收回归清单 · <批次目录>",
+            f"# 07 验收回归清单：{task_name}",
+            ledger_template.name,
+        )
+        if today:
+            text = replace_once(
+                text,
+                "| 生成日期 | <date> |",
+                f"| 生成日期 | {today} |",
+                ledger_template.name,
+            )
+        text = replace_once(
+            text,
+            "| 被测版本 | commit / 构建号：<commit> |",
+            f"| 被测版本 | commit / 构建号：{head} |",
+            ledger_template.name,
+        )
+        text = replace_once(
+            text,
+            "| 环境 | 项目：<项目>；模式：<模式> |",
+            f"| 环境 | 项目：{project}；模式：{mode_label(mode)} |",
+            ledger_template.name,
+        )
+        return text
+
     text = read_template("07-acceptance.md")
     text = replace_once(
         text,
@@ -206,10 +278,10 @@ def init_task(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        project, _ = read_project(args.adapter)
+        project, ledger_template = read_adapter(args.adapter)
         head, head_ok = run_git_head()
         task_card = render_task_card(task_name, head, project, args.mode, today)
-        ledger = render_ledger(task_name, head, project, args.mode)
+        ledger = render_ledger(task_name, head, project, args.mode, ledger_template, today)
         # 举证单没有可自动填写的已知值，原样复制；等真正阻塞时再填。
         blocking_form = read_template("blocking-form.md")
     except ValueError as error:
@@ -245,6 +317,8 @@ def init_task(args: argparse.Namespace) -> int:
     print(f"HEAD：{head}")
     print(f"模式：{mode_label(args.mode)}")
     print(f"项目：{project}" + ("" if project != "未提供" else "（未传 --adapter）"))
+    if ledger_template is not None:
+        print(f"账本模板：{ledger_template}")
     if not head_ok:
         print("提示：未取到 git HEAD，版本锚点已写“未取到”；请补版本锚点后再开工。")
     print("提示：范围、验收项、判据和证据保持空白；空账本检查会报缺字段，这是预期行为。")

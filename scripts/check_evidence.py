@@ -27,6 +27,9 @@ from typing import Iterable, Optional
 STATUSES = ("待验", "验中", "通过", "未通过", "阻塞", "不适用", "待定")
 # 进入收口时必须已经有证据的状态。
 EVIDENCED_STATUSES = {"通过", "未通过", "阻塞"}
+# 模板里的结论占位符不是真实结论；空账本应只报缺字段，不要额外判结论非法。
+PLACEHOLDER_CONCLUSIONS = {"通过 / 未通过 / 阻塞", "通过/未通过/阻塞"}
+
 # 尚未产生结论、允许证据列为空的状态。
 PENDING_STATUSES = {"待验", "验中", "待定"}
 # 账本允许的证据等级记法。
@@ -519,7 +522,11 @@ def check_ledger(path: Path, root: Path) -> tuple[list[Issue], dict[str, int], s
             issues.append(Issue("E_CONCLUSION", "收口缺少“结论：”行", closing[1]))
         else:
             declared_conclusion = match.group(1).strip()
-            if declared_conclusion not in {"通过", "未通过", "阻塞"}:
+            if declared_conclusion in PLACEHOLDER_CONCLUSIONS:
+                # 模板占位符视为“还没写结论”，交给缺字段提示；不要在空账本上
+                # 再抛一条 E_CONCLUSION，让使用者先看到可操作的补填信息。
+                declared_conclusion = ""
+            elif declared_conclusion not in {"通过", "未通过", "阻塞"}:
                 issues.append(
                     Issue(
                         "E_CONCLUSION",
@@ -532,7 +539,7 @@ def check_ledger(path: Path, root: Path) -> tuple[list[Issue], dict[str, int], s
             r"计数[:：]\s*通过\s*(\d+)\s*/\s*未通过\s*(\d+)\s*/\s*阻塞\s*(\d+)\s*/\s*不适用\s*(\d+)",
             closing_text,
         )
-        if count_match:
+        if count_match and declared_conclusion:
             declared_counts = {
                 "通过": int(count_match.group(1)),
                 "未通过": int(count_match.group(2)),
@@ -553,7 +560,7 @@ def check_ledger(path: Path, root: Path) -> tuple[list[Issue], dict[str, int], s
                         closing[1],
                     )
                 )
-        else:
+        elif declared_conclusion:
             issues.append(
                 Issue("W_COUNT", "收口缺少“计数：通过 x / 未通过 y / 阻塞 z / 不适用 w”", closing[1], severity="warning")
             )
@@ -647,11 +654,25 @@ def main(argv: Optional[list[str]] = None) -> int:
         }
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
-        for issue in issues:
-            print(issue.render(resolved))
         field_errors = [issue for issue in errors if issue.code == "E_FIELD"]
-        if field_errors:
-            print(f"缺字段：{len(field_errors)} 处必填内容为空，请补齐后再检查。")
+        # 空账本往往一次缺多个字段；只聚合一条可操作提示，避免刷屏。
+        # 只有“全部错误都是缺字段”时才聚合，混合错误仍逐条给行号。
+        aggregate_only = bool(field_errors) and len(field_errors) == len(errors)
+        if aggregate_only:
+            fields = []
+            for issue in field_errors:
+                if issue.message not in fields:
+                    fields.append(issue.message)
+            print(
+                f"[FAIL] {resolved} [E_FIELD] "
+                + "、".join(fields)
+                + f"（共 {len(field_errors)} 处），请补齐后再检查。"
+            )
+        else:
+            for issue in issues:
+                print(issue.render(resolved))
+            if field_errors:
+                print(f"缺字段：{len(field_errors)} 处必填内容为空，请补齐后再检查。")
         if errors:
             print(f"检查失败：{len(errors)} 项错误，{len(warnings)} 项警告")
         else:
