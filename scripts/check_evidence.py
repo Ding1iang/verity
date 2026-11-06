@@ -487,6 +487,10 @@ def check_ledger(path: Path, root: Path) -> tuple[list[Issue], dict[str, int], s
                 issues.append(
                     Issue("E_EVIDENCE_LEVEL", f"{item_id or '该行'}判通过但证据等级为“{level or '空'}”", number)
                 )
+            elif min_level.strip() in {"", "—", "-", "–"}:
+                issues.append(
+                    Issue("E_FIELD", f"{item_id or '该行'}判通过但最低证据未填写有效等级", number)
+                )
             else:
                 required = minimum_required_levels(min_level)
                 if not required:
