@@ -2,6 +2,29 @@
 
 本文件记录 verity 的对外变更。版本号遵循语义化版本（`MAJOR.MINOR.PATCH`），格式参考 Keep a Changelog。
 
+## [v1.1.0] - 2026-11-07
+
+v1.1.0 补上“用户旅程”验收层：批次不只看单点检查有没有打勾，还要看用户从入口到目标的连续路径、跨区域状态是否一致、整窗证据是否成立。
+
+### 新增
+
+- `references/journey-acceptance.md`：用户旅程卡、跨区域不变量、整窗证据、每批 5 分钟不按清单使用、批次通过条件。
+- `templates/journey-card.md`：J-ID、步骤、可见变化、跨区域不变量、证据和结论。
+
+### 变更
+
+- `SKILL.md` 升到 1.1.0；五步流程加入旅程卡和整窗/不变量检查，输出增加“旅程”一行。
+- `references/acceptance.md`：批次通过增加“至少一份旅程卡通过、无未解决不变量”；07 用户路径列必须引用 J-ID/步骤。
+- `references/acceptance-run.md`：观察先看整窗，每步做跨区域自检，批量验收先写 1–3 张旅程卡并留 5 分钟真实使用。
+- `references/visual.md`：新增跨区域选中态，要求整窗截图/像素采样，不能只靠布局树判选中。
+- `templates/07-acceptance.md`、`templates/task-card.md`：加入旅程段、旅程字段和收口条件。
+
+### 验证
+
+- `python3 scripts/selftest.py`：5/5 通过。
+- `python3 scripts/anti_examples.py`：10/10 反例通过。
+- `python3 scripts/package.py --check`：60/60 文件。
+
 ## [v1.0.0] - 2026-11-06
 
 v1.0.0 把 verity 从可用骨架收口为可发布版本：默认 v1 十列四状态，检查器覆盖 commit 锚点、证据复用和证据自述缺口，覆盖总表能统计包结论，并补齐四个模式的示例与十类反例。
