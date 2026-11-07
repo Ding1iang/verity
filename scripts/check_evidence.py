@@ -16,7 +16,7 @@
 “单项验收（证据账本）”段的按 v1 十列检查，其余按通用八列检查。
 也可以用 `--format legacy|v1` 显式指定；`--adapter` 会读取项目根、
 项目账本模板和账本枚举，决定证据路径基准、默认格式与允许取值。
-`--strict` 额外拒绝任何“带欠账/带欠账交付”。
+`--compat-debt` 仅为读取历史账本放行“带欠账/带欠账交付”；新账本默认拒绝，`--strict` 仍可用于叠加卡口。
 
 退出码：0 = 通过；1 = 发现问题；2 = 参数或读取错误。
 """
@@ -49,19 +49,23 @@ V1_STATUSES = ("通过", "带欠账", "未交付-失败", "未交付-阻塞", "�
 V1_EVIDENCE_TYPES = ("截图", "布局树", "像素", "DB", "日志", "性能")
 V1_CONFIDENCES = ("高", "中", "低")
 V1_CONCLUSIONS = ("通过", "带欠账交付", "未交付（失败）", "未交付（阻塞）")
+# 新账本默认只允许四状态、三结论；“带欠账”只为读取历史账本保留，
+# 需要显式 --compat-debt 才放行，避免它被当成新的收口出口。
+V1_STRICT_STATUSES = tuple(status for status in V1_STATUSES if status != "带欠账")
+V1_STRICT_CONCLUSIONS = tuple(conclusion for conclusion in V1_CONCLUSIONS if conclusion != "带欠账交付")
 
 
 @dataclass(frozen=True)
 class LedgerPolicy:
     """v1 账本允许的状态与包结论。
 
-    默认值是 verity 的通用五状态；项目适配层可以收窄，例如 ruiku-note
-    只允许四状态、三结论，不允许“带欠账”。枚举只能从默认集合里取子集，
-    防止项目配置把错别字固化成新规范。
+    默认值是四状态、三结论，新账本不能写“带欠账”；读取历史账本时用
+    `--compat-debt` 显式放行。项目适配层可以继续收窄，但不能超出
+    verity 支持的枚举，防止项目配置把错别字固化成新规范。
     """
 
-    statuses: tuple[str, ...] = V1_STATUSES
-    conclusions: tuple[str, ...] = V1_CONCLUSIONS
+    statuses: tuple[str, ...] = V1_STRICT_STATUSES
+    conclusions: tuple[str, ...] = V1_STRICT_CONCLUSIONS
     evidence_types: tuple[str, ...] = V1_EVIDENCE_TYPES
     confidences: tuple[str, ...] = V1_CONFIDENCES
 
@@ -1341,9 +1345,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     parser.add_argument("--json", action="store_true", help="以 JSON 输出结果，便于 CI 消费")
     parser.add_argument(
+        "--compat-debt",
+        action="store_true",
+        help="仅为读取历史账本，允许“带欠账”状态或“带欠账交付”结论；新账本不要使用",
+    )
+    parser.add_argument(
         "--strict",
         action="store_true",
-        help="严格模式：除常规检查外，拒绝任何“带欠账”状态或“带欠账交付”结论",
+        help="严格模式：拒绝任何“带欠账”状态或“带欠账交付”结论（默认已拒绝，保留用于显式卡口）",
     )
     args = parser.parse_args(argv)
 
@@ -1381,6 +1390,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         adapter_root = context.project_root
         adapter_format = context.format
         policy = context.policy
+    elif args.compat_debt:
+        # 只有未指定项目适配层时才允许松开；项目适配层自己的枚举优先。
+        policy = LedgerPolicy(statuses=V1_STATUSES, conclusions=V1_CONCLUSIONS)
 
     if args.root:
         root = Path(args.root).expanduser().resolve()

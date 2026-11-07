@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""生成并运行 10 类反例，逐条断言检查器报出指定错误码。
+"""生成并运行 11 类反例，逐条断言检查器报出指定错误码。
 
 这个脚本是给 verifier 用的“反例预备清单”执行器：所有样本在临时目录里
 即时生成，不依赖仓库里的示例文件，也不写入用户数据。每个样本都故意只
@@ -8,7 +8,7 @@
 用法：
     python3 scripts/anti_examples.py
 
-退出码：0 = 10 类反例全部按预期报错；1 = 至少一类没有报出指定错误码。
+退出码：0 = 11 类反例全部按预期报错；1 = 至少一类没有报出指定错误码。
 """
 
 from __future__ import annotations
@@ -207,6 +207,9 @@ def main() -> int:
 
         # 10. 旧结论词：规范状态之外写“基本可用”。
         cases.append(("old-words", write_case(root, "old-words", [row("CASE-10", evidence="task-card.md：基本可用")]), "E_OLD_WORD"))
+
+        # 11. 新账本默认禁止带欠账：没有 --compat-debt 时，带欠账必须报错。
+        cases.append(("debt-not-allowed", write_case(root, "debt-not-allowed", [row("CASE-11", status="带欠账")], conclusion="带欠账交付"), "E_STATUS"))
 
         for name, ledger, expected in cases:
             total += 1

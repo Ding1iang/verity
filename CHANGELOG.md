@@ -2,6 +2,27 @@
 
 本文件记录 verity 的对外变更。版本号遵循语义化版本（`MAJOR.MINOR.PATCH`），格式参考 Keep a Changelog。
 
+## [v1.2.0] - 2026-11-07
+
+v1.2.0 把修缺陷从“最小修复”改为“根因修复（完整覆盖）”，并把完成审计前移到收口门禁：能现在补的验证、证据和修复，不允许留成欠账。
+
+### 变更
+
+- `SKILL.md` 升到 1.2.0；硬规则新增“完整修复，不留可补的缺口”，五步流程的落账步骤加入完成审计；带欠账改为仅历史账本兼容。
+- `references/bug-fix.md`：步骤 4 从“最小修复”改为“根因修复”，2.4 改为“根因修复（完整覆盖）”，硬边界收窄为四类；新增 2.7 完成门禁；04 记录从“最小性”改为“改动与完整性”。
+- `references/acceptance.md`、`templates/07-acceptance.md`：新增完成审计表与收口规则，完成定义逐条对应最终构建、实际读数和证据。
+- `README.md`、`docs/design.md`、`references/adapter.md`、`CONTRIBUTING.md`、`templates/adapter.json`：同步“带欠账仅为读取历史账本兼容，新账本默认禁止”。
+- `scripts/check_evidence.py`：默认只允许四状态、三结论，新增 `--compat-debt` 仅用于读取历史账本；新增第 11 个反例验证带欠账默认报错。
+
+### 验证
+
+- `python3 scripts/selftest.py`：5/5 通过。
+- `python3 scripts/anti_examples.py`：11/11 反例按预期报错。
+- `python3 scripts/check_coverage.py --selftest`：8/8 通过。
+- 默认拒绝带欠账（E_STATUS / E_CONCLUSION），加 `--compat-debt` 可读取历史账本并退出 0。
+- `python3 scripts/package.py --check`：60/60 文件。
+- 五个示例账本全部通过 `check_evidence.py`；01/02/04/05 的结论分别为通过 3/4/1/5 行，03 为阻塞（通过 2 / 阻塞 1 / 不适用 1）。
+
 ## [v1.1.0] - 2026-11-07
 
 v1.1.0 补上“用户旅程”验收层：批次不只看单点检查有没有打勾，还要看用户从入口到目标的连续路径、跨区域状态是否一致、整窗证据是否成立。

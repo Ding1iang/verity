@@ -82,7 +82,7 @@ python3 <verity 仓库>/scripts/check_evidence.py <07 路径> \
   --adapter <项目根>/.verity/adapter.json
 ```
 
-检查器默认允许 `带欠账` 状态与 `带欠账交付` 结论；项目验收合同不允许欠账时加 `--strict`，出现欠账会报 `E_STRICT_DEBT`。不带适配层也可以显式写 `--format v1 --root <项目根>`；旧八列账本用 `--format legacy`。
+检查器默认只允许四状态、三结论，不接受 `带欠账` 状态与 `带欠账交付` 结论；读取历史账本时加 `--compat-debt` 显式放行。`--strict` 可叠加卡口，出现欠账会报 `E_STRICT_DEBT`。不带适配层也可以显式写 `--format v1 --root <项目根>`；旧八列账本用 `--format legacy`。
 
 退出码：`0` 通过；`1` 有问题；`2` 参数或读取错误。
 
