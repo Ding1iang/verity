@@ -1,11 +1,11 @@
 {
   "schema": "verity-manifest/v1",
   "created_at": "2026-11-08",
-  "workspace_hash": "347536de79686537da5a1e7e3497201330f1dc3d320e21910cf6406954f77924",
+  "workspace_hash": "5135fb2f78349d8d3d545d8694234282b99746d7fb60d6e9364d50a401085245",
   "files": [
     {
       "path": "examples/04-project-v1/07-验收回归清单.md",
-      "sha256": "216039a45e78d1d321be38548566d8fd84870e6bc0f8933adc3f07bfea3faf8f",
+      "sha256": "3f3d99f4f8abbcd9b3dba6d9c9c92910c7c711ccd076ba47938fc2e93ce9a9ec",
       "bytes": 3388,
       "tracked": true,
       "source_command": "python3 scripts/check_evidence.py examples/04-project-v1/07-验收回归清单.md"
@@ -19,8 +19,8 @@
     },
     {
       "path": "examples/04-project-v1/bad-fake-screenshot/07-验收回归清单.md",
-      "sha256": "f9db6dc3e34575b0a42ccef604e4a7becd17b906b1b5263ede82ddfc6a8d1636",
-      "bytes": 3415,
+      "sha256": "c00e18f728fc30283a867f8b381cd685b00cb3c0ffd3d729daec21b0275978ef",
+      "bytes": 3418,
       "tracked": true,
       "source_command": "批次骨架/记录文件"
     },

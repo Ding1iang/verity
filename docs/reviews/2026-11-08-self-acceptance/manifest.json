@@ -1,18 +1,18 @@
 {
   "schema": "verity-manifest/v1",
   "created_at": "2026-11-08",
-  "workspace_hash": "eb430371545d0ff50aa94b6e123de84ff184391739cc1c49e27868521df6bec4",
+  "workspace_hash": "3a76b92fcf0d56edbbb1fc3baa74e123799cf33b0d0a2576111e6e8219b5ebb3",
   "files": [
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md",
-      "sha256": "0b188f489636c0a6baa4fc8a27c744ddf271b44ab9a37a181ff99c489bf442d7",
-      "bytes": 5693,
+      "sha256": "5255612f1097d83a76f18375d3d771e608da882f1d1bdcb9bec4df258a2bed15",
+      "bytes": 6087,
       "tracked": true,
       "source_command": "python3 scripts/check_evidence.py docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md"
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/README.md",
-      "sha256": "4ac40815ac8b7231371ce851547fcf894d7510ba9c86206d56a94d5cca933bd6",
+      "sha256": "78d60b213841653431a96d5bf815a16ec356f6bafabec0d5cb0eb852346e8f55",
       "bytes": 1959,
       "tracked": true,
       "source_command": "批次骨架/记录文件"
@@ -26,22 +26,22 @@
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/evidence/04-verification.log",
-      "sha256": "b91186686d5e10f7fa1c7fcbb0448bb020223dd0ed8edde637f2a0f7337e64eb",
-      "bytes": 9007,
+      "sha256": "37b5b5401c98fc0e577f6a409f494f5a4f72533e4bfd60fd722db44f3e6f18f9",
+      "bytes": 2614,
       "tracked": true,
       "source_command": "见 07 账本对应证据行的取证方式"
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/journey-01.md",
-      "sha256": "30497cd3a40e56c8efbc7a2746a4acac4a36202fc8cdb469b5ae7eb7751bc5ef",
+      "sha256": "8e90ab52f7a3984d7745de6ba8b330d94840d6b720189058a2be31ba166853de",
       "bytes": 2597,
       "tracked": true,
       "source_command": "批次骨架/记录文件"
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/task-card.md",
-      "sha256": "e2e0de592329535703de503a96fbfd8092af308b9aee838bcbfb9d094f001087",
-      "bytes": 5680,
+      "sha256": "27c1f76bee1c9122ee326a7063ecf82ae4fd5e84c3a4e8501b276f2e5463cbd2",
+      "bytes": 5916,
       "tracked": true,
       "source_command": "批次骨架/记录文件"
     }
