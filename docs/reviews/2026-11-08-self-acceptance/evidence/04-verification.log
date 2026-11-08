@@ -28,12 +28,12 @@ $ python3 scripts/check_evidence.py examples/05-release/07-验收回归清单.md
 
 $ python3 scripts/package.py --check
 文件数：60 / 60
-总大小：592.7 KB / 10.0 MB
+总大小：594.5 KB / 10.0 MB
 检查通过（--check 模式，未生成 zip）
 
 $ python3 scripts/package.py --check --max-files 60
 文件数：60 / 60
-总大小：592.7 KB / 10.0 MB
+总大小：594.5 KB / 10.0 MB
 检查通过（--check 模式，未生成 zip）
 
 $ git diff --check
