@@ -975,6 +975,9 @@ def scan_secrets(paths: list[Path]) -> list[str]:
         except (OSError, UnicodeDecodeError):
             continue
         for line_number, line in enumerate(text.splitlines(), 1):
+            # 哈希、提交号和 base64 摘要里可能出现连续数字，先剔除长十六进制串，
+            # 否则 64 位 SHA-256 会被手机号规则误报；真正的凭据仍会在原文其他位置命中。
+            line = re.sub(r"\b[0-9a-fA-F]{32,}\b", "", line)
             for pattern, label in SECRET_PATTERNS + PII_PATTERNS:
                 match = pattern.search(line)
                 if not match:
