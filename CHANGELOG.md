@@ -15,7 +15,7 @@ v1.3.0 落地 32 项工作流优化：任务卡前置盘问与快慢车道、AC/
 - `scripts/check_evidence.py`：v1 schema 2 全量校验；旅程未通过不判通过、AC 覆盖、同人复核、空举证、重复截图、旧构建、缺路径和伪证据都会阻断。
 - `scripts/check_coverage.py`：批次目录必须含 `journey-*.md`，自测增到 9 例。
 - `scripts/verity.py`：新增 doctor、gate、manifest、report、metrics、upgrade、scan；init 生成 `journey-01.md` 且不预填通过。
-- `scripts/anti_examples.py`：从 11 例扩到 40 例，新增 v2 结构、旅程、判据、范围锁、证据命令和证据归属反例。
+- `scripts/anti_examples.py`：从 11 例扩到 49 例，新增 v2 结构、旅程、判据、范围锁、证据命令和证据归属反例。
 - `scripts/package.py`：排除分析记录和独立评审报告，默认文件上限恢复为 60；新增 `--selftest` 验证 60 通过、70 失败。
 - `examples/04-project-v1`、`examples/05-release`：补齐旅程、完成审计、证据身份和独立复核。
 - 新增 `docs/optimization-matrix.md`（32/32 状态 done）、`docs/reviews/2026-11-08-self-acceptance/` 自验收证据包。
