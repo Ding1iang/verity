@@ -220,3 +220,23 @@ HEAD：0752f36
 exit=0
 
 # 说明：以上所有命令均为 exit=0；最终提交后的干净克隆复跑见文末。
+
+# 干净克隆复跑（实现提交 9828363d0d2bfb313c5cfed10a538c0dbafed957）
+$ git clone --no-local . <临时目录>/verity-clean
+HEAD=9828363d0d2bfb313c5cfed10a538c0dbafed957
+$ git status --short
+（空）
+$ python3 scripts/package.py --check
+  文件数：60 / 60
+  总大小：574.3 KB / 10.0 MB
+检查通过（--check 模式，未生成 zip）
+$ python3 scripts/check_evidence.py docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md
+[OK] .../07-验收回归清单.md：6 行，结论=通过（通过 6）
+$ python3 scripts/verity.py gate --root . --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md --release
+  [PASS] 证据账本
+  [PASS] 覆盖总表：未配置（跳过）
+  [PASS] 证据包清单：6 个文件
+  [PASS] 范围锁
+  [PASS] 防绕过：未启用
+  [PASS] 安全脱敏
+结果：通过（6/6）
