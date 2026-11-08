@@ -8,7 +8,7 @@ v1.3.0 落地 32 项工作流优化：任务卡前置盘问与快慢车道、AC/
 
 ### 变更
 
-- `SKILL.md`、`README.md`、`references/acceptance.md`、`references/adapter.md`：升到 1.3.0，统一 v1 schema 2 十三列、十段必需结构、四条硬规则、六份模板、五个示例和 47 类反例的计数。
+- `SKILL.md`、`README.md`、`references/acceptance.md`、`references/adapter.md`：升到 1.3.0，统一 v1 schema 2 十三列、十段必需结构、四条硬规则、六份模板、五个示例和 49 类反例的计数。
 - `templates/task-card.md`：新增车道与风险、立卡前盘问、规格摘要（spec-lite）、范围锁和可判判据。
 - `templates/07-acceptance.md`：十三列账本、用户旅程、证据身份、完成审计、独立复核、复盘、发布风险、证据归属。
 - `templates/journey-card.md`、`templates/blocking-form.md`：升 v2，补通用布局说明与四维举证字段。
@@ -23,7 +23,7 @@ v1.3.0 落地 32 项工作流优化：任务卡前置盘问与快慢车道、AC/
 ### 验证
 
 - `python3 scripts/selftest.py`：5/5 通过。
-- `python3 scripts/anti_examples.py`：47/47 夹具按预期报错。
+- `python3 scripts/anti_examples.py`：49/49 夹具按预期报错。
 - `python3 scripts/check_coverage.py --selftest`：9/9 通过。
 - `python3 scripts/verity.py gate --selftest`：正负对照通过。
 - `python3 scripts/verity.py gate --root . --ledger examples/04-project-v1/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run`：5/5 通过；05 为 5/5（未生成 manifest 时清单步骤跳过）。

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""生成并运行 41 类反例，逐条断言检查器报出指定错误码。
+"""生成并运行 49 类反例，逐条断言检查器报出指定错误码。
 
 这个脚本是给 verifier 用的“反例预备清单”执行器：所有样本在临时目录里
 即时生成，不依赖仓库里的示例文件，也不写入用户数据。每个样本都故意只
@@ -8,7 +8,7 @@
 用法：
     python3 scripts/anti_examples.py
 
-退出码：0 = 41 类夹具全部按预期报错；1 = 至少一类没有报出指定错误码。
+退出码：0 = 49 类夹具全部按预期报错；1 = 至少一类没有报出指定错误码。
 """
 
 from __future__ import annotations
@@ -670,6 +670,15 @@ def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
             "E_EVIDENCE_OWNER",
         )
     )
+
+    # 证据绑定旧提交后，只要 scripts/ 又改过，旧证据就必须失效。
+    # 这里在夹具自带的临时仓库里追加一个“实现提交”，账本仍绑定前一个提交。
+    stale_ledger = v2_case(root, "v2-stale-evidence-scripts")
+    stale_case = stale_ledger.parent
+    (stale_case / "scripts" / "marker.py").write_text("# implementation changed after evidence\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=stale_case, check=False)
+    subprocess.run(["git", "commit", "-qm", "fixture: implementation after evidence"], cwd=stale_case, check=False)
+    cases.append(("v2-stale-evidence-scripts", stale_ledger, "E_STALE_EVIDENCE"))
     return cases
 
 
@@ -726,6 +735,7 @@ def main() -> int:
         cases.append(("debt-not-allowed", write_case(root, "debt-not-allowed", [row("CASE-11", status="带欠账")], conclusion="带欠账交付"), "E_STATUS"))
 
         all_cases = cases + run_v2_cases(root)
+        module = check_evidence_module()
         for name, ledger, expected in all_cases:
             total += 1
             code, output = run_checker(
@@ -740,8 +750,33 @@ def main() -> int:
                 print(f"[FAIL] {name}: 期望 {expected}，退出码 {code}")
                 print(output.rstrip())
 
+        # 正向对照：证据提交之后只追加 docs/reviews 下的记录文件，不应被判旧证据。
+        positive_dir = root / "v2-docs-only-after-evidence"
+        positive_ledger = v2_case(root, "v2-docs-only-after-evidence")
+        doc_path = positive_dir / "docs" / "reviews" / "note.md"
+        doc_path.parent.mkdir(parents=True, exist_ok=True)
+        doc_path.write_text("# 取证后的记录变更\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=positive_dir, check=False)
+        subprocess.run(["git", "commit", "-qm", "fixture: docs only after evidence"], cwd=positive_dir, check=False)
+        fingerprint = module.workspace_fingerprint(positive_dir, positive_dir)
+        positive_text = positive_ledger.read_text(encoding="utf-8")
+        positive_text = re.sub(
+            r"\| [0-9a-f]{64} \| (—|EV-01 exit=0) \|",
+            lambda match: f"| {fingerprint} | {match.group(1)} |",
+            positive_text,
+        )
+        positive_ledger.write_text(positive_text, encoding="utf-8")
+        total += 1
+        code, output = run_checker(positive_ledger, positive_dir)
+        if code == 0 and "E_STALE_EVIDENCE" not in output:
+            passed += 1
+            print("[PASS] v2-docs-only-after-evidence: 旧证据在纯记录变更后仍有效")
+        else:
+            failures.append("v2-docs-only-after-evidence")
+            print(f"[FAIL] v2-docs-only-after-evidence: 退出码 {code}")
+            print(output.rstrip())
+
         # 证据命令执行链三夹具：成功、非零退出、未登记命令。
-        module = check_evidence_module()
         command_root = root / "command-cases"
         command_root.mkdir()
         (command_root / "README.md").write_text("command fixture\n", encoding="utf-8")

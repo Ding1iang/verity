@@ -1104,9 +1104,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     matrix = root / "docs" / "optimization-matrix.md"
     if matrix.is_file():
         expected_counts = {
-            root / "README.md": ("47 个反例", "60 / 60"),
-            root / "CHANGELOG.md": ("47/47", "60/60"),
-            matrix: ("47/47",),
+            root / "README.md": ("49 个反例", "60 / 60"),
+            root / "CHANGELOG.md": ("49/49", "60/60"),
+            matrix: ("49/49",),
         }
         missing_counts: list[str] = []
         for file, needles in expected_counts.items():

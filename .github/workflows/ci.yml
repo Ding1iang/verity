@@ -53,6 +53,7 @@ jobs:
         run: python scripts/verity.py doctor --root . --adapter tests/fixtures/valid-adapter.json
 
       # 本地 pre-push 可直接复制这一组 gate；PR/push 在 CI 强制执行同一检查。
+      # 第一条 gate 与 README「可选：把完成线装成 pre-push」逐字一致，防止文档漂移。
       - name: 本地完成线门禁
         run: |
           python scripts/verity.py gate \

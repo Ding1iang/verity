@@ -99,6 +99,8 @@
 
 **无法确认锚点是否变化时，按已过期处理。** 时间不是唯一标准：昨天的证据可能仍然有效，改过一行代码之后的证据一定失效。外部条件类证据（服务可用、证书、额度、网络）只在当次会话内有效，跨会话必须重取。
 
+**提交锚点加严**：账本里的 commit 必须等于最终实现提交。若该提交之后到当前 HEAD 之间又改过 `scripts/`、`templates/`、`references/`、`tests/`、`.github/`、`SKILL.md`、`README.md` 或 `VERSION`，旧证据一律报 `E_STALE_EVIDENCE`；只追加 `docs/reviews/`、`evidence/`、`CHANGELOG.md` 等记录性文件时，才允许继续使用。
+
 ## 5. 置信度
 
 置信度只写四档，不写百分比：

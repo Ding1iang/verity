@@ -207,6 +207,18 @@ V1_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*-[0-9]{2,3}$")
 V1_COMMIT_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 V1_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+# 证据 commit 之后到 HEAD 只允许出现“记录性”改动；只要动过下面这些
+# 实现或规则路径，旧证据就不再能证明当前 HEAD 的行为，必须重新取证。
+# docs/、CHANGELOG.md、evidence/ 等只影响记录，允许在取证提交之后追加。
+IMPLEMENTATION_CHANGE_PREFIXES = (
+    "scripts/",
+    "templates/",
+    "references/",
+    "tests/",
+    ".github/",
+)
+IMPLEMENTATION_CHANGE_FILES = {"SKILL.md", "README.md", "VERSION"}
+
 # 截图类证据必须能落到一张真实图片上。只认常见图片后缀，并要求文件非空；
 # “见截图”“截图如下”这类自述不算证据，防止用文字冒充截图。
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
@@ -738,6 +750,40 @@ def git_is_ancestor(root: Path, commit: str) -> tuple[bool, Optional[str]]:
     if process.returncode == 1:
         return False, None
     return False, "无法判断 commit 与 HEAD 的祖先关系（项目根可能不是 git 仓库）"
+
+
+def git_changed_paths(root: Path, base: str, head: str = "HEAD") -> tuple[list[str], Optional[str]]:
+    """列出 base..head 之间改动过的仓库相对路径。
+
+    证据绑定的是“取证时的实现版本”。如果之后又改了检查器、模板、规则或
+    示例，旧证据只能说明旧版本，不能继续为最终 HEAD 背书。这里使用
+    --name-only 只取路径，不依赖文件是否存在。
+    """
+    try:
+        process = subprocess.run(
+            ["git", "-C", str(root), "diff", "--name-only", f"{base}..{head}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (OSError, ValueError) as error:
+        return [], f"无法执行 git：{error}"
+    if process.returncode != 0:
+        return [], "无法读取证据提交到 HEAD 的差异"
+    return [line.strip() for line in process.stdout.splitlines() if line.strip()], None
+
+
+def stale_implementation_changes(paths: Iterable[str]) -> list[str]:
+    """返回 base..HEAD 中属于实现/规则文件的路径。"""
+    changed: list[str] = []
+    for path in paths:
+        normalized = path.replace("\\", "/")
+        if normalized in IMPLEMENTATION_CHANGE_FILES:
+            changed.append(normalized)
+            continue
+        if any(normalized.startswith(prefix) for prefix in IMPLEMENTATION_CHANGE_PREFIXES):
+            changed.append(normalized)
+    return changed
 
 
 def git_path_dirty(root: Path, path: Path) -> tuple[bool, Optional[str]]:
@@ -2166,6 +2212,32 @@ def check_v1_ledger(
     build_text = batch_values.get("被测版本", "")
     build_match = re.search(r"构建号[:：]\s*([^；;，,\s]+)", build_text)
     batch_build = build_match.group(1).strip() if build_match else ""
+    commit_match = re.search(r"commit[:：]\s*([0-9a-fA-F]{7,40})", build_text)
+    batch_commit = commit_match.group(1).lower() if commit_match else ""
+    if batch_commit:
+        changed, changed_error = git_changed_paths(root, batch_commit)
+        if changed_error:
+            issues.append(
+                Issue(
+                    "E_STALE_EVIDENCE",
+                    f"无法确认证据提交 {batch_commit[:12]} 到 HEAD 的差异：{changed_error}；"
+                    "旧证据不能继续作为最终提交的验收依据",
+                    batch_start,
+                )
+            )
+        else:
+            stale_paths = stale_implementation_changes(changed)
+            if stale_paths:
+                preview = "、".join(stale_paths[:5])
+                more = f" 等 {len(stale_paths)} 个文件" if len(stale_paths) > 5 else ""
+                issues.append(
+                    Issue(
+                        "E_STALE_EVIDENCE",
+                        f"证据绑定 commit {batch_commit[:12]}，但之后到 HEAD 又改过实现/规则文件："
+                        f"{preview}{more}；必须按最终提交重新取证",
+                        batch_start,
+                    )
+                )
     environment = batch_values.get("环境", "")
     is_release = "release" in environment.lower() or "发布" in environment
     if is_release:
@@ -2347,6 +2419,18 @@ def check_v1_ledger(
                             Issue(
                                 "E_COMMIT",
                                 f"commit“{commit}”不是 HEAD 或 HEAD 的祖先，不能用旧提交当本批锚点",
+                                number,
+                            )
+                        )
+                    elif batch_commit and not (
+                        commit.lower() == batch_commit
+                        or batch_commit.startswith(commit.lower())
+                    ):
+                        issues.append(
+                            Issue(
+                                "E_COMMIT",
+                                f"行 commit“{commit[:12]}”与批次被测 commit“{batch_commit[:12]}”不一致；"
+                                "最终验收必须统一绑定同一个提交",
                                 number,
                             )
                         )
