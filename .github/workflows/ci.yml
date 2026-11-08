@@ -54,9 +54,23 @@ jobs:
 
       # 本地 pre-push 可直接复制这一组 gate；PR/push 在 CI 强制执行同一检查。
       # 第一条 gate 与 README「可选：把完成线装成 pre-push」逐字一致，防止文档漂移。
+      - name: README 命令漂移检查
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("README.md").read_text(encoding="utf-8")
+          start = text.index("### 可选：把完成线装成 pre-push")
+          block = text[start:].split("```sh", 1)[1].split("```", 1)[0]
+          expected = """python3 scripts/verity.py gate --root . \
+            --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md \
+            --adapter tests/fixtures/valid-adapter.json --run --team --release"""
+          assert expected in block, "README pre-push 命令已漂移"
+          print("README pre-push 命令一致")
+          PY
+
       - name: 本地完成线门禁
         run: |
-          python scripts/verity.py gate \
+          python3 scripts/verity.py gate \
             --root . \
             --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md \
             --adapter tests/fixtures/valid-adapter.json --run --team --release
