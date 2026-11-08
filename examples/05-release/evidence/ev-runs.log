@@ -1,0 +1,1 @@
+{"time": "2026-11-08T17:08:06", "head": "c86704e218a13b4853d3be58e11171ca1f9dcbad", "ev": "EV-01", "command": "python3 scripts/selftest.py", "exit": 0, "output": "[PASS] 坏样本·旧结论词：退出 1，命中 E_OLD_WORD | [PASS] 坏样本·重复状态源：退出 1，命中 E_DUP_SOURCE | 结果：5/5 通过", "output_sha256": "100615a80a05ac9376824961d017895088176117da95616b2ed99b1f18419cf1", "summary": "结果：5/5 通过"}

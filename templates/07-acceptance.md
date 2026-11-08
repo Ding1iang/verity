@@ -73,7 +73,7 @@
 |---|---|---|---|---|---|---|---|---|---|
 | AC-01 | supports | python3 scripts/selftest.py | README.md | 0 | 结果：5/5 通过 | <YYYY-MM-DDTHH:MM:SS> | <7-40 位提交哈希> | <独立复核者> | <YYYY-MM-DD> |
 
-> 复核结论只能是 `supports` / `does-not-support` / `unclear`；每条 AC 至少一个 `supports`，至少复跑一条 A 级证据命令。检查器会在 HEAD 干净树里真跑命令，核对退出码、输出摘要、复跑时间和 HEAD；只抄命令/输出不算复核。
+> 复核结论只能是 `supports` / `does-not-support` / `unclear`；每条 AC 至少一个 `supports`，至少复跑一条 A 级证据命令。复跑命令只填 EV ID（如 `EV-01`），检查器从本行证据路径指向的 `evidence/ev-runs.log` 读取实际执行记录，重算输出 SHA-256，并核对退出码、HEAD、执行时间和输出摘要；不接受任意 shell 命令，也不执行复核行里的命令。
 > 批次执行者、单行产出者都不能与复核者相同；复核者只能看证据和复跑结果，不能替实现者补证据。
 
 ## 复盘

@@ -185,6 +185,7 @@ def v2_case(
     extra: dict[str, str] | None = None,
     card_mutate=None,
     journey_mutate=None,
+    log_mutate=None,
 ) -> Path:
     """以合规的 v2 批次为底，只改一处，确保反例失败是因为目标规则而不是缺段。"""
     case_dir = root / name
@@ -194,6 +195,13 @@ def v2_case(
     # 复核命令现在会真的在干净树里执行；夹具必须带上被调用的检查器脚本，
     # 否则失败原因会变成“脚本不存在”，掩盖目标规则。
     shutil.copytree(REPO_ROOT / "scripts", case_dir / "scripts", dirs_exist_ok=True)
+    # 复核检查读取本批次的 EV 执行记录；每个夹具复制一份真实记录，
+    # 再把 HEAD 改成夹具自己的临时提交。
+    shutil.copytree(
+        REPO_ROOT / "examples/04-project-v1/evidence",
+        case_dir / "evidence",
+        dirs_exist_ok=True,
+    )
     if card_mutate is not None:
         card = card_mutate((case_dir / "task-card.md").read_text(encoding="utf-8"))
         (case_dir / "task-card.md").write_text(card, encoding="utf-8")
@@ -201,6 +209,8 @@ def v2_case(
         journey = journey_mutate((case_dir / "journey-01.md").read_text(encoding="utf-8"))
         (case_dir / "journey-01.md").write_text(journey, encoding="utf-8")
     text = (V2_BASE / "07-验收回归清单.md").read_text(encoding="utf-8")
+    # 夹具没有同级 examples/04 目录；复核记录改用本批次证据路径。
+    text = text.replace("../04-project-v1/evidence/ev-runs.log", "evidence/ev-runs.log")
     ledger = case_dir / "07-验收回归清单.md"
     ledger.write_text(text, encoding="utf-8")
     # v2 账本必须绑定真实 commit：给每个夹具建一个只含本批次的临时 git 仓库。
@@ -213,6 +223,13 @@ def v2_case(
     text = re.sub(r"\b[0-9a-f]{40}\b", commit, text)
     # 复核表的“复跑 HEAD”是短哈希，单独替换，确保夹具绑定自己的提交。
     text = text.replace("| b60b207 |", f"| {commit[:7]} |")
+    log_path = case_dir / "evidence/ev-runs.log"
+    if log_path.is_file():
+        record = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
+        record["head"] = commit
+        if log_mutate is not None:
+            log_mutate(record)
+        log_path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
     for filename, content in (extra or {}).items():
         path = case_dir / filename
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -311,8 +328,8 @@ def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
     cases.append(("v2-empty-blocking-form", v2_case(root, "v2-empty-blocking-form", blocked, {"blocking-form.md": empty_form}), "E_BLOCKING_FORM"))
 
     def duplicate_screenshot(text: str, *, sha: str, size: int) -> str:
-        text = text.replace("| REL-04 | AC-04 | J-01 / 步骤 4 | 上一可用版本、恢复步骤和恢复后冒烟检查齐全 | 日志 | README.md |", "| REL-04 | AC-04 | J-01 / 步骤 4 | 上一可用版本、恢复步骤和恢复后冒烟检查齐全 | 截图 | shot.png |", 1)
-        text = text.replace("| REL-05 | AC-05 | J-01 / 步骤 5 | 主路径和错误路径各一次，结果已记录 | 日志 | README.md |", "| REL-05 | AC-05 | J-01 / 步骤 5 | 主路径和错误路径各一次，结果已记录 | 截图 | shot.png |", 1)
+        text = text.replace("| REL-04 | AC-04 | J-01 / 步骤 4 | 上一可用版本、恢复步骤和恢复后冒烟检查齐全 | 日志 | README.md（EV-01） |", "| REL-04 | AC-04 | J-01 / 步骤 4 | 上一可用版本、恢复步骤和恢复后冒烟检查齐全 | 截图 | shot.png |", 1)
+        text = text.replace("| REL-05 | AC-05 | J-01 / 步骤 5 | 主路径和错误路径各一次，结果已记录 | 日志 | README.md（EV-01） |", "| REL-05 | AC-05 | J-01 / 步骤 5 | 主路径和错误路径各一次，结果已记录 | 截图 | shot.png |", 1)
         identity = f"| shot.png | {sha} | {size} | example-05-build | 示例项目 / 单机 / Python 3.9+ | 2026-11-08 | {'0' * 64} | viewport=390x844；pixel_hash={'a' * 64} |"
         return text.replace("\n\n## 完成审计", "\n" + identity + "\n\n## 完成审计", 1)
 
@@ -322,11 +339,16 @@ def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
     sha = hashlib.sha256(shot.read_bytes()).hexdigest()
     screenshot_ledger = v2_case(root, "v2-duplicate-screenshot", lambda text: duplicate_screenshot(text, sha=sha, size=shot.stat().st_size))
     (screenshot_ledger.parent / "shot.png").write_bytes(shot.read_bytes())
+    fp = check_evidence_module().workspace_fingerprint(screenshot_ledger.parent, screenshot_ledger.parent)
+    screenshot_ledger.write_text(
+        screenshot_ledger.read_text(encoding="utf-8").replace("| " + "0" * 64 + " | viewport=", f"| {fp} | viewport="),
+        encoding="utf-8",
+    )
     cases.append(("v2-duplicate-screenshot", screenshot_ledger, "E_EVIDENCE_REUSED"))
 
     cases.append(("v2-old-build", v2_case(root, "v2-old-build", lambda text: text.replace("| example-05-build | 示例项目", "| example-04-build | 示例项目", 1)), "E_ARTIFACT_BUILD"))
-    cases.append(("v2-missing-evidence-path", v2_case(root, "v2-missing-evidence-path", lambda text: text.replace("| REL-03 | AC-03 | J-01 / 步骤 3 | 干净检出构建成功，产物 SHA-256 已记录 | 日志 | README.md |", "| REL-03 | AC-03 | J-01 / 步骤 3 | 干净检出构建成功，产物 SHA-256 已记录 | 日志 | evidence/missing.log |", 1)), "E_EVIDENCE_PATH"))
-    cases.append(("v2-fake-evidence", v2_case(root, "v2-fake-evidence", lambda text: text.replace("| REL-03 | AC-03 | J-01 / 步骤 3 | 干净检出构建成功，产物 SHA-256 已记录 | 日志 | README.md |", "| REL-03 | AC-03 | J-01 / 步骤 3 | 干净检出构建成功，产物 SHA-256 已记录 | 日志 | todo.log |", 1), {"todo.log": "TODO\n"}), "E_FAKE_EVIDENCE"))
+    cases.append(("v2-missing-evidence-path", v2_case(root, "v2-missing-evidence-path", lambda text: text.replace("| REL-03 | AC-03 | J-01 / 步骤 3 | 干净检出构建成功，产物 SHA-256 已记录 | 日志 | README.md（EV-01） |", "| REL-03 | AC-03 | J-01 / 步骤 3 | 干净检出构建成功，产物 SHA-256 已记录 | 日志 | evidence/missing.log |", 1)), "E_EVIDENCE_PATH"))
+    cases.append(("v2-fake-evidence", v2_case(root, "v2-fake-evidence", lambda text: text.replace("| REL-03 | AC-03 | J-01 / 步骤 3 | 干净检出构建成功，产物 SHA-256 已记录 | 日志 | README.md（EV-01） |", "| REL-03 | AC-03 | J-01 / 步骤 3 | 干净检出构建成功，产物 SHA-256 已记录 | 日志 | todo.log |", 1), {"todo.log": "TODO\n"}), "E_FAKE_EVIDENCE"))
 
     ascii_dir = root / "v2-ascii-image"
     ascii_dir.mkdir(parents=True, exist_ok=True)
@@ -341,13 +363,19 @@ def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
 
     def ascii_image(text: str) -> str:
         text = text.replace(
-            "| REL-04 | AC-04 | J-01 / 步骤 4 | 上一可用版本、恢复步骤和恢复后冒烟检查齐全 | 日志 | README.md |",
+            "| REL-04 | AC-04 | J-01 / 步骤 4 | 上一可用版本、恢复步骤和恢复后冒烟检查齐全 | 日志 | README.md（EV-01） |",
             "| REL-04 | AC-04 | J-01 / 步骤 4 | 上一可用版本、恢复步骤和恢复后冒烟检查齐全 | 截图 | shot.png |",
             1,
         )
         return text.replace("\n\n## 完成审计", "\n" + ascii_identity + "\n\n## 完成审计", 1)
 
-    cases.append(("v2-ascii-image", v2_case(root, "v2-ascii-image", ascii_image), "E_SCREENSHOT"))
+    ascii_ledger = v2_case(root, "v2-ascii-image", ascii_image)
+    fp = check_evidence_module().workspace_fingerprint(ascii_ledger.parent, ascii_ledger.parent)
+    ascii_ledger.write_text(
+        ascii_ledger.read_text(encoding="utf-8").replace("| " + "0" * 64 + " | viewport=", f"| {fp} | viewport="),
+        encoding="utf-8",
+    )
+    cases.append(("v2-ascii-image", ascii_ledger, "E_SCREENSHOT"))
 
     cases.append(
         (
@@ -524,11 +552,19 @@ def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
         )
     )
 
-    def fake_review(text: str) -> str:
-        # 命令是真的，但输出摘要抄了一句不存在的内容；检查器必须比对实际输出。
+    def review_command(text: str, command: str) -> str:
         return re.sub(
-            r"\| `python3 scripts/selftest\.py` \| README\.md \| 0 \| 结果：5/5 通过 \|",
-            "| `python3 scripts/selftest.py` | README.md | 0 | fabricated output |",
+            r"(\| AC-01 \| supports \| )EV-01( \|)",
+            lambda m: m.group(1) + command + m.group(2),
+            text,
+            count=1,
+        )
+
+    def fake_review(text: str) -> str:
+        # 执行记录是真的，但账本里抄了记录中不存在的输出摘要。
+        return re.sub(
+            r"(\| AC-01 \| supports \| EV-01 \|[^\n]*\| )结果：5/5 通过( \|)",
+            r"\1fabricated output\2",
             text,
             count=1,
         )
@@ -541,27 +577,84 @@ def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
         )
     )
 
-    def inline_fake_review(text: str) -> str:
-        # 用 python -c 打印一句假输出，命令本身没有复核任何事实，必须被拒绝。
-        return re.sub(
-            r"\| `python3 scripts/selftest\.py` \| README\.md \| 0 \| 结果：5/5 通过 \|",
-            "| `python3 -c \"print('fabricated')\"` | README.md | 0 | fabricated |",
-            text,
-            count=1,
-        )
-
     cases.append(
         (
-            "v2-review-inline-fake",
-            v2_case(root, "v2-review-inline-fake", mutate=inline_fake_review),
+            "v2-review-sh-c",
+            v2_case(
+                root,
+                "v2-review-sh-c",
+                mutate=lambda text: review_command(text, "sh -c 'echo \"结果：5/5 通过\"'"),
+            ),
             "E_REVIEW_COMMAND",
         )
     )
-
     cases.append(
         (
-            "v2-review-old",
-            v2_case(root, "v2-review-old", lambda text: text.replace("2026-11-08T15:00:00", "2026-11-07T15:00:00", 1)),
+            "v2-review-bash-c",
+            v2_case(
+                root,
+                "v2-review-bash-c",
+                mutate=lambda text: review_command(text, "bash -c 'echo \"结果：5/5 通过\"'"),
+            ),
+            "E_REVIEW_COMMAND",
+        )
+    )
+    cases.append(
+        (
+            "v2-review-echo",
+            v2_case(
+                root,
+                "v2-review-echo",
+                mutate=lambda text: review_command(text, 'echo "结果：5/5 通过"'),
+            ),
+            "E_REVIEW_COMMAND",
+        )
+    )
+    cases.append(
+        (
+            "v2-review-python-c",
+            v2_case(
+                root,
+                "v2-review-python-c",
+                mutate=lambda text: review_command(
+                    text, "python3 -c \"print('结果：5/5 通过')\""
+                ),
+            ),
+            "E_REVIEW_COMMAND",
+        )
+    )
+    cases.append(
+        (
+            "v2-review-forged-hash",
+            v2_case(
+                root,
+                "v2-review-forged-hash",
+                log_mutate=lambda record: record.update({"output_sha256": "0" * 64}),
+            ),
+            "E_REVIEW_COMMAND",
+        )
+    )
+    cases.append(
+        (
+            "v2-review-old-head",
+            v2_case(
+                root,
+                "v2-review-old-head",
+                log_mutate=lambda record: record.update(
+                    {"head": "b60b2077b41a82888a388ad1d9ff1d98caa1dacc"}
+                ),
+            ),
+            "E_REVIEW_COMMAND",
+        )
+    )
+    cases.append(
+        (
+            "v2-review-early-time",
+            v2_case(
+                root,
+                "v2-review-early-time",
+                log_mutate=lambda record: record.update({"time": "2026-11-07T16:54:51"}),
+            ),
             "E_REVIEW_COMMAND",
         )
     )

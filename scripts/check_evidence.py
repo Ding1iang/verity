@@ -1440,28 +1440,44 @@ def check_completion_audit(
         )
 
 
-def _run_review_command(command: str, root: Path, timeout: int = 120) -> tuple[int, str, str]:
-    """在 HEAD 的干净导出树里执行一条复核命令，返回退出码、输出和 HEAD。
+def _normalize_review_text(value: str) -> str:
+    """把复核输出/记录压成单行，避免换行与多余空白造成假差异。"""
+    return " ".join(value.split())
 
-    复核不是“写一条命令”就算数：必须在干净树上真跑，才能区分“复核过”
-    和“把命令和输出抄进表格”。临时树只包含 HEAD 内容，避免工作区未提交
-    文件替复核结果背书；超时或无法启动同样按失败处理。
+
+def _load_ev_records(path: Path) -> tuple[list[dict], list[str]]:
+    """读取 ev-runs.log（JSON Lines），返回记录和格式错误。
+
+    记录必须由 --run 实际执行后写入，不能手工编造。检查器只读记录，
+    不再执行复核行里的任意命令，shell 包装因此失去作用。
     """
-    temporary, worktree = _extract_clean_worktree(root)
-    try:
-        process = subprocess.run(
-            command,
-            shell=True,
-            cwd=worktree,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-        output = (process.stdout or "") + (process.stderr or "")
-        return process.returncode, output, _git_head(root)
-    finally:
-        temporary.cleanup()
+    if not path.is_file():
+        return [], []
+    records: list[dict] = []
+    errors: list[str] = []
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            errors.append(f"ev-runs.log 第 {number} 行不是合法 JSON")
+            continue
+        if not isinstance(record, dict):
+            errors.append(f"ev-runs.log 第 {number} 行不是对象")
+            continue
+        records.append(record)
+    return records, errors
+
+
+def _review_log_path(values: dict[str, str], root: Path, ledger_dir: Path) -> Path:
+    """从复核证据列找 ev-runs.log；找不到时退回本批次 evidence/。"""
+    for candidate in extract_paths(values.get("evidence", "")):
+        resolved = resolve_existing_path(candidate, root, ledger_dir)
+        if resolved is not None and resolved.name == "ev-runs.log":
+            return resolved
+    return ledger_dir / "evidence" / "ev-runs.log"
 
 
 def check_independent_review(
@@ -1473,7 +1489,13 @@ def check_independent_review(
     ledger_dir: Path,
     issues: list[Issue],
 ) -> None:
-    """检查独立复核：逐 AC 表态、真跑复跑命令、核对输出/HEAD/时间。"""
+    """检查独立复核：逐 AC 表态，复核命令必须绑定 EV 执行记录。
+
+    复核行的“复跑命令”只接受 EV ID。检查器从该行证据路径对应的
+    ev-runs.log 读取实际执行记录，重算输出哈希，并核对 exit、HEAD、
+    执行时间和输出摘要。任意命令字符串（包括 sh -c、echo、python -c）
+    都无法提供匹配记录，因此不会因为“输出看起来对”而通过。
+    """
     section = find_section(sections, "独立复核")
     if section is None:
         return
@@ -1509,14 +1531,18 @@ def check_independent_review(
             Issue("E_REVIEW_INDEPENDENT", "批次执行者与复核者不能是同一个人", section[1])
         )
 
-    covered: dict[str, list[dict]] = {}
-    # 同一批次里多个 AC 可能复用同一条命令；每个命令只跑一次，既省时间，
-    # 也保证同一批复核看到的输出完全一致。内层检查（复核命令本身调用
-    # check_evidence）用环境变量熔断，避免递归执行。
-    run_cache: dict[str, tuple[int, str] | Issue] = {}
-    review_depth = bool(os.environ.get("VERITY_REVIEW_DEPTH"))
+    build_text = batch_values.get("被测版本", "")
+    commit_match = re.search(r"commit[:：]\s*([0-9a-fA-F]{7,40})", build_text)
+    batch_commit = commit_match.group(1).lower() if commit_match else ""
+    if not batch_commit:
+        issues.append(
+            Issue("E_REVIEW_COMMAND", "批次信息缺少被测 commit，无法绑定 EV 执行记录", section[1])
+        )
+    batch_date = batch_values.get("生成日期", "").strip()
     actual_head = _git_head(root)
     now = datetime.now()
+    log_cache: dict[Path, tuple[list[dict], list[str]]] = {}
+    covered: dict[str, list[dict]] = {}
     for number, row in review_rows:
         values = {key: cell(row, index).strip() for key, index in indexes.items()}
         if all(not value for value in values.values()):
@@ -1542,11 +1568,6 @@ def check_independent_review(
                     number,
                 )
             )
-        batch_date = batch_values.get("生成日期", "").strip()
-        if values["runtime"] and batch_date:
-            runtime_date = values["runtime"].split("T", 1)[0].split(" ", 1)[0]
-            if V1_DATE_RE.fullmatch(runtime_date) and V1_DATE_RE.fullmatch(batch_date) and runtime_date < batch_date:
-                issues.append(Issue("E_REVIEW_COMMAND", "复跑时间早于批次生成日期，不能作为本次取证", number))
         if values["time"] and not V1_DATE_RE.fullmatch(values["time"]):
             issues.append(Issue("E_REVIEW", f"复核时间“{values['time']}”不是 YYYY-MM-DD", number))
         if values["exitcode"] != "0":
@@ -1558,79 +1579,126 @@ def check_independent_review(
             r"\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?", values["runtime"]
         ):
             issues.append(Issue("E_REVIEW_COMMAND", "复跑时间应为 YYYY-MM-DD 或 ISO 时间", number))
+
         command = values["command"].strip().strip("`")
-        if command and (
-            re.match(r"^(echo|true|false|printf|cat)\b", command)
-            or command.startswith("<")
-            or re.search(r"\bpython3?\s+-c\b", command)
-        ):
+        if not re.fullmatch(r"EV-\d{2,3}", command):
             issues.append(
                 Issue(
                     "E_REVIEW_COMMAND",
-                    "复跑命令不能是 echo/true/python -c 这类不产生复核事实的假命令",
+                    "复跑命令必须填 EV ID（如 EV-01），不能填任意 shell 命令",
                     number,
                 )
             )
-        if command and command not in run_cache:
-            if review_depth:
-                run_cache[command] = Issue("E_REVIEW_COMMAND", "复核命令递归执行，已熔断")
-            else:
-                try:
-                    code, actual_output, actual_head = _run_review_command(command, root)
-                    normalized = " ".join(actual_output.split())
-                    run_cache[command] = (code, normalized)
-                except (OSError, subprocess.TimeoutExpired) as error:
-                    run_cache[command] = Issue("E_REVIEW_COMMAND", f"复核命令执行失败：{error}")
-        if command:
-            result = run_cache.get(command)
-            if isinstance(result, Issue):
-                issues.append(result)
-            else:
-                actual_code, actual_output = result
-                if actual_code != 0:
+            continue
+        log_path = _review_log_path(values, root, ledger_dir)
+        if log_path not in log_cache:
+            log_cache[log_path] = _load_ev_records(log_path)
+        records, log_errors = log_cache[log_path]
+        for error in log_errors:
+            issues.append(Issue("E_REVIEW_COMMAND", error, number))
+        record = next(
+            (item for item in reversed(records) if str(item.get("ev", "")).strip() == command),
+            None,
+        )
+        if record is None:
+            issues.append(
+                Issue(
+                    "E_REVIEW_COMMAND",
+                    f"复核命令 {command} 没有对应的执行记录；必须先通过 --run 实际执行",
+                    number,
+                )
+            )
+            continue
+        required_fields = ("time", "head", "ev", "command", "exit", "output", "output_sha256", "summary")
+        missing_fields = [field for field in required_fields if not str(record.get(field, "")).strip()]
+        if missing_fields:
+            issues.append(
+                Issue(
+                    "E_REVIEW_COMMAND",
+                    f"{command} 的执行记录缺字段：" + "、".join(missing_fields),
+                    number,
+                )
+            )
+            continue
+        record_output = str(record["output"])
+        claimed_hash = str(record["output_sha256"]).strip().lower()
+        actual_hash = hashlib.sha256(record_output.encode("utf-8")).hexdigest()
+        if claimed_hash != actual_hash:
+            issues.append(
+                Issue(
+                    "E_REVIEW_COMMAND",
+                    f"{command} 的输出哈希与记录内容不一致，记录可能被改写",
+                    number,
+                )
+            )
+        record_head = str(record["head"]).strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{7,40}", record_head):
+            issues.append(Issue("E_REVIEW_COMMAND", f"{command} 的执行记录 HEAD 不是提交哈希", number))
+        elif batch_commit and record_head != batch_commit:
+            issues.append(
+                Issue(
+                    "E_REVIEW_COMMAND",
+                    f"{command} 的执行记录 HEAD“{record_head[:12]}”不是本批被测 commit“{batch_commit[:12]}”",
+                    number,
+                )
+            )
+        else:
+            ancestor, error = git_is_ancestor(root, record_head)
+            if not ancestor:
+                issues.append(
+                    Issue(
+                        "E_REVIEW_COMMAND",
+                        f"{command} 的执行记录 HEAD“{record_head[:12]}”不是当前 HEAD“{actual_head[:12]}”的祖先"
+                        + (f"：{error}" if error else ""),
+                        number,
+                    )
+                )
+        try:
+            record_time = datetime.fromisoformat(str(record["time"]).replace("Z", "+00:00"))
+            if record_time.tzinfo is not None:
+                record_time = record_time.astimezone().replace(tzinfo=None)
+        except ValueError:
+            issues.append(Issue("E_REVIEW_COMMAND", f"{command} 的执行记录时间不是 ISO 时间", number))
+            record_time = None
+        if record_time is not None:
+            if batch_date and V1_DATE_RE.fullmatch(batch_date):
+                if record_time.date() < datetime.strptime(batch_date, "%Y-%m-%d").date():
                     issues.append(
                         Issue(
                             "E_REVIEW_COMMAND",
-                            f"复核命令实际退出码 {actual_code}，不能写通过；输出：{actual_output[-200:]}",
+                            f"{command} 的执行记录早于批次生成日期，不能作为本次取证",
                             number,
                         )
                     )
-                claimed_output = " ".join(values["output"].split())
-                if claimed_output and not claimed_output.startswith("<") and claimed_output not in {"命令退出 0", "命令退出0"}:
-                    if claimed_output not in actual_output:
-                        issues.append(
-                            Issue(
-                                "E_REVIEW_COMMAND",
-                                "复跑输出摘要与实际执行输出不一致，不能只抄一句“命令退出 0”",
-                                number,
-                            )
-                        )
-                if values["head"]:
-                    claimed_head = values["head"].strip().strip("`")
-                    if not re.fullmatch(r"[0-9a-fA-F]{7,40}", claimed_head):
-                        issues.append(Issue("E_REVIEW_COMMAND", "复跑 HEAD 必须是提交哈希", number))
-                    else:
-                        # 复核提交必须等于 HEAD 或为其祖先：允许复核后追加文档/
-                        # 证据提交，但不允许把一个从未在分支上出现过的哈希写进来。
-                        ancestor, error = git_is_ancestor(root, claimed_head)
-                        if not ancestor:
-                            issues.append(
-                                Issue(
-                                    "E_REVIEW_COMMAND",
-                                    f"复跑 HEAD“{claimed_head}”不是当前 HEAD“{actual_head[:12]}”的祖先"
-                                    + (f"：{error}" if error else ""),
-                                    number,
-                                )
-                            )
-        if values["runtime"]:
-            try:
-                runtime_value = datetime.fromisoformat(values["runtime"].replace("Z", "+00:00"))
-                if runtime_value.tzinfo is not None:
-                    runtime_value = runtime_value.astimezone().replace(tzinfo=None)
-                if runtime_value > now.replace(microsecond=0) + timedelta(minutes=5):
-                    issues.append(Issue("E_REVIEW_COMMAND", "复跑时间不能晚于当前时间", number))
-            except ValueError:
-                pass
+            if record_time > now.replace(microsecond=0) + timedelta(minutes=5):
+                issues.append(Issue("E_REVIEW_COMMAND", f"{command} 的执行记录时间晚于当前时间", number))
+            if values["runtime"] and str(record["time"]).strip() != values["runtime"].strip():
+                issues.append(
+                    Issue(
+                        "E_REVIEW_COMMAND",
+                        f"{command} 的复跑时间与执行记录时间不一致",
+                        number,
+                    )
+                )
+        claimed_head = values["head"].strip().strip("`")
+        if claimed_head.lower() != record_head:
+            issues.append(
+                Issue(
+                    "E_REVIEW_COMMAND",
+                    f"{command} 的复跑 HEAD 与执行记录 HEAD 不一致",
+                    number,
+                )
+            )
+        claimed_summary = _normalize_review_text(values["output"])
+        record_summary = _normalize_review_text(str(record["summary"]))
+        if claimed_summary != record_summary:
+            issues.append(
+                Issue(
+                    "E_REVIEW_COMMAND",
+                    f"{command} 的复跑输出与执行记录摘要不一致",
+                    number,
+                )
+            )
         paths = extract_paths(values["evidence"])
         if not paths:
             issues.append(Issue("E_REVIEW", "复核行没有复跑证据路径", number))
@@ -2937,7 +3005,12 @@ def run_evidence_commands(
     issues: list[Issue],
     timeout: int = 120,
 ) -> None:
-    """按 EV ID 执行适配层白名单命令；任何失败都阻断验收。"""
+    """按 EV ID 执行适配层白名单命令，并把可复核的执行记录写入 ev-runs.log。
+
+    记录使用 JSON Lines，保留时间、HEAD、EV ID、命令、退出码、输出摘要
+    和输出 SHA-256。已有同 EV、同命令、exit=0 的记录时直接复用，避免每次
+    gate 重跑都改写证据包；复核检查只认这些记录，不执行任意命令。
+    """
     if adapter_path is None:
         issues.append(Issue("E_EVIDENCE_COMMAND", "启用 --run 时必须提供适配层 evidence_commands"))
         return
@@ -2979,11 +3052,32 @@ def run_evidence_commands(
     if not referenced:
         issues.append(Issue("E_EVIDENCE_COMMAND", "账本没有引用任何 EV ID"))
         return
+    evidence_dir = path.parent / "evidence"
+    log_path = evidence_dir / "ev-runs.log"
+    existing_records, log_errors = _load_ev_records(log_path)
+    if log_errors:
+        # 旧格式或损坏记录无法被复核校验，要求先清理后再执行。
+        issues.append(Issue("E_EVIDENCE_COMMAND", "；".join(log_errors)))
+        return
     temporary, worktree = _extract_clean_worktree(root)
-    records: list[str] = []
+    new_records: list[dict] = []
     try:
         for evidence_id in sorted(set(referenced)):
             command = commands[evidence_id]
+            reusable = next(
+                (
+                    item
+                    for item in reversed(existing_records)
+                    if str(item.get("ev", "")) == evidence_id
+                    and str(item.get("command", "")) == command
+                    and str(item.get("exit", "")) == "0"
+                    and str(item.get("output_sha256", ""))
+                ),
+                None,
+            )
+            if reusable is not None:
+                print(f"[OK] {evidence_id} 复用已有执行记录：{command}")
+                continue
             try:
                 process = subprocess.run(
                     command,
@@ -2999,8 +3093,21 @@ def run_evidence_commands(
                     Issue("E_EVIDENCE_COMMAND", f"{evidence_id} 命令执行失败：{error}")
                 )
                 continue
-            output = (process.stdout + process.stderr).strip().splitlines()
-            tail = " | ".join(output[-3:]) if output else "无输出"
+            lines = (process.stdout + process.stderr).strip().splitlines()
+            tail = " | ".join(lines[-3:]) if lines else "无输出"
+            summary = lines[-1] if lines else "无输出"
+            timestamp = datetime.now().isoformat(timespec="seconds")
+            head = _git_head(root)
+            record = {
+                "time": timestamp,
+                "head": head,
+                "ev": evidence_id,
+                "command": command,
+                "exit": process.returncode,
+                "output": tail,
+                "output_sha256": hashlib.sha256(tail.encode("utf-8")).hexdigest(),
+                "summary": summary,
+            }
             if process.returncode != 0:
                 issues.append(
                     Issue(
@@ -3010,29 +3117,23 @@ def run_evidence_commands(
                 )
             else:
                 print(f"[OK] {evidence_id} 退出码 0：{command}；输出：{tail}")
-            records.append(
-                f"{datetime.now().isoformat(timespec='seconds')} "
-                f"HEAD={_git_head(root)} {evidence_id} exit={process.returncode} "
-                f"command={command} output={tail}"
-            )
+            new_records.append(record)
     finally:
         temporary.cleanup()
-    if records:
-        evidence_dir = path.parent / "evidence"
+    if new_records:
         evidence_dir.mkdir(parents=True, exist_ok=True)
-        log_path = evidence_dir / "ev-runs.log"
-        existing = log_path.read_text(encoding="utf-8") if log_path.is_file() else ""
         with log_path.open("a", encoding="utf-8") as handle:
-            for record in records:
-                # 同一 HEAD、同一命令、同一退出码只记一次；重复跑 gate 不应因为
-                # 追加新时间戳而让已经登记的 manifest SHA-256 失效。
-                # 去重键只看 EV、退出码和命令；同一命令在不同检出 HEAD
-                # 重复执行时，保留最初一条执行记录，避免清点包被改写。
-                stable = record.split(" EV-", 1)[1].split(" output=", 1)[0]
-                if stable in existing:
+            for record in new_records:
+                stable_parts = (record["ev"], record["command"], record["exit"])
+                duplicate = any(
+                    (str(item.get("ev", "")), str(item.get("command", "")), str(item.get("exit", "")))
+                    == stable_parts
+                    for item in existing_records
+                )
+                if duplicate:
                     continue
-                handle.write(record + "\n")
-                existing += record + "\n"
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+                existing_records.append(record)
 
 
 def _git_head(root: Path) -> str:

@@ -46,7 +46,7 @@ description: 当 AI 准备说完成时，用任务卡、证据分级、用户旅
 1. **立卡**：按 `templates/task-card.md` 写任务卡，先写 1–3 张用户旅程卡（`templates/journey-card.md`）。先判车道与风险：跨模块、不可逆、数据、安全、发布任一硬触发就进全流程；全流程必须留 5–10 条立卡前盘问和一页规格摘要。目标一句话，范围写清做与不做并落成范围锁；每条验收项带可判判据和最低证据等级；没有判据的项不许开工。开工前先看工作区状态，保留已有改动；只改任务卡范围，不覆盖或回滚不属于本次的改动。
 2. **取证**：按判据和旅程卡实际执行，记录命令或操作路径、读数、时间、被测版本；每条证据在“证据身份”登记文件、SHA-256、字节数、构建号、环境、取证时间和 workspace_hash，截图补 viewport 与 pixel_hash，性能补 runs 与 median，数据补 before/after。每次动作后先看整窗，再断言跨区域不变量（当前页/标题/列表选中/计数/DB 是否互相对得上）；不能只截当前检查项。动手前先想清楚“什么结果会推翻这条结论”。操作与观察方法见 `references/acceptance-run.md`；用户旅程见 `references/journey-acceptance.md`；视觉和行为/性能专项分别见 `references/visual.md`、`references/behavior-perf.md`。
 3. **判级**：按 `references/evidence.md` 给每条证据定 A/B+/B/C，对照该项最低等级；证据覆盖范围小于结论范围的，一律降级或改小结论。
-4. **攻防**：独立复核人必须与执行者不同；复核表逐 AC 写 supports / does-not-support / unclear，并至少复跑一条 A 级命令。用坏样本证明检查会报红（`anti_examples.py`）；出现反证就当场改判。每批再留 5 分钟不按清单的真实使用，把新发现转成缺陷或不变量。
+4. **攻防**：独立复核人必须与执行者不同；复核表逐 AC 写 supports / does-not-support / unclear，复跑命令填 EV ID（如 `EV-01`），绑定 `evidence/ev-runs.log` 的真实执行记录。用坏样本证明检查会报红（`anti_examples.py`）；出现反证就当场改判。每批再留 5 分钟不按清单的真实使用，把新发现转成缺陷或不变量。
 5. **落账**：一项一行写进 `07-验收回归清单.md`（模板 `templates/07-acceptance.md`），每行用“覆盖 AC”列映射任务卡、用“用户路径”列引用旅程步骤；收口前先做完成审计，把完成定义逐条对应到最终构建、实际读数和证据路径；再写独立复核、复盘与证据包清单。按 `references/acceptance.md` 的模板规则收口，清理本次临时产物。
 
 ## 输出格式

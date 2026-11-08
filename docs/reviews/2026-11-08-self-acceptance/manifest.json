@@ -1,18 +1,18 @@
 {
   "schema": "verity-manifest/v1",
   "created_at": "2026-11-08",
-  "workspace_hash": "4d8d04029237b36ac4322d1efc9843d5d3c4c7b1595dbdaddea74746d42af0eb",
+  "workspace_hash": "f64b7caec28ce42098cb7e1cfb79ef34930f704f1395dcbb02bbce68352d2448",
   "files": [
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md",
-      "sha256": "ece078c59dbe4f52c54c94fb9b26a08467c9c353a44b972d4c091a2aeb66814d",
-      "bytes": 6100,
+      "sha256": "53209a273c21c620f257afb770d100adff750613f152c98239dd544a9d8dccd8",
+      "bytes": 6595,
       "tracked": true,
       "source_command": "python3 scripts/check_evidence.py docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md"
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/README.md",
-      "sha256": "812f1336d7ae1ea5dd2a160682dc92446bc467b30b92cc5c4b92882960f3771e",
+      "sha256": "028a2dd838f06506ecf82b7e584ec85fbbf218d6674591ee3e99feb9512078a1",
       "bytes": 1959,
       "tracked": true,
       "source_command": "批次骨架/记录文件"
@@ -26,21 +26,28 @@
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/evidence/04-verification.log",
-      "sha256": "beadf1c474eaac3afde4a4787b35ac4c980b0780f86334fcf27cccf60c72a02a",
-      "bytes": 4266,
+      "sha256": "3ce2bfc0ba6799f73560e256fecc5f56f3f373698d58bb4adc557441008b34fa",
+      "bytes": 5050,
+      "tracked": true,
+      "source_command": "见 07 账本对应证据行的取证方式"
+    },
+    {
+      "path": "docs/reviews/2026-11-08-self-acceptance/evidence/ev-runs.log",
+      "sha256": "c9e12ea72207a6accf566a059a578173b4b0f7621f089272df22b622a3f726d5",
+      "bytes": 437,
       "tracked": true,
       "source_command": "见 07 账本对应证据行的取证方式"
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/journey-01.md",
-      "sha256": "9def9cdcece618c4251e661dda7468799ba6a9016b7737c865074853cb06c2a2",
+      "sha256": "8793ca61f293972a636765623b9b45f100cf6306f4eca0a7c6adc56d9e7aa679",
       "bytes": 2597,
       "tracked": true,
       "source_command": "批次骨架/记录文件"
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/task-card.md",
-      "sha256": "543c177b9e0d7875ad81bee658471f01c16121d199b15fe7b386cb3595c334ee",
+      "sha256": "13586c3bbb8af84786ff9d8af3c7f79576d4f8a6dc0cb2ba184e4416f8dcc936",
       "bytes": 6069,
       "tracked": true,
       "source_command": "批次骨架/记录文件"

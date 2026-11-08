@@ -58,6 +58,7 @@ EXCLUDED_RELATIVE_PATTERNS = (
     "tests/fixtures/*",
     "docs/reviews/2026-11-06-independent-review.md",
     "docs/reviews/clean-clone.md",
+    "docs/reviews/anti-examples.md",
     ".github/ISSUE_TEMPLATE/*",
     "SECURITY.md",
     "CONTRIBUTING.md",
@@ -66,6 +67,7 @@ EXCLUDED_RELATIVE_PATTERNS = (
     "examples/04-project-v1/bad-fake-screenshot/*",
     "examples/05-release/bad-gate-only/*",
     "examples/04-project-v1/manifest.json",
+    "examples/05-release/evidence/ev-runs.log",
     "examples/01-new-feature/README.md",
 )
 

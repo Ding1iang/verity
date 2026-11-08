@@ -41,7 +41,7 @@ jobs:
       - name: 运行 init 自测
         run: bash tests/init-selftest.sh
 
-      - name: 校验四个示例账本
+      - name: 校验五个示例账本
         run: |
           python scripts/check_evidence.py examples/01-new-feature/07-验收回归清单.md
           python scripts/check_evidence.py examples/02-bug-fix/07-验收回归清单.md
@@ -58,10 +58,10 @@ jobs:
           python scripts/verity.py gate \
             --root . \
             --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md \
-            --team --release
+            --adapter tests/fixtures/valid-adapter.json --run --team --release
           python scripts/verity.py gate --selftest
           python scripts/verity.py gate --root . --ledger examples/04-project-v1/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run
-          python scripts/verity.py gate --root . --ledger examples/05-release/07-验收回归清单.md
+          python scripts/verity.py gate --root . --ledger examples/05-release/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run
           python scripts/package.py --selftest
 
   markdown-links:

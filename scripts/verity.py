@@ -937,6 +937,17 @@ def read_anti_bypass_policy(root: Path, base: str) -> dict:
     return merged
 
 
+def _removed_test_hit(text: str, tokens: list[str]) -> bool:
+    """判断删除行是否命中测试断言标记；`it(` 只认调用位置，避免误伤 `split(`。"""
+    for token in tokens:
+        if token == "it(":
+            if re.search(r"(?<![\w.])it\(", text):
+                return True
+        elif token in text:
+            return True
+    return False
+
+
 def check_anti_bypass(root: Path, base: str) -> list[str]:
     """检查 base...HEAD 是否删断言、加 skip/focus 或绕过提交钩子。"""
     policy = read_anti_bypass_policy(root, base)
@@ -959,7 +970,7 @@ def check_anti_bypass(root: Path, base: str) -> list[str]:
                 issues.append(f"{current_file} 新增绕过标记：{added.strip()}")
         elif line.startswith("-") and not line.startswith("---"):
             removed = line[1:]
-            if any(token in removed for token in banned_removed):
+            if _removed_test_hit(removed, banned_removed):
                 issues.append(f"{current_file} 删除了断言/测试：{removed.strip()}")
     return issues
 
@@ -1093,9 +1104,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     matrix = root / "docs" / "optimization-matrix.md"
     if matrix.is_file():
         expected_counts = {
-            root / "README.md": ("42 个反例", "60 / 60"),
-            root / "CHANGELOG.md": ("42/42", "60/60"),
-            matrix: ("42/42",),
+            root / "README.md": ("47 个反例", "60 / 60"),
+            root / "CHANGELOG.md": ("47/47", "60/60"),
+            matrix: ("47/47",),
         }
         missing_counts: list[str] = []
         for file, needles in expected_counts.items():
