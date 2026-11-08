@@ -4,7 +4,7 @@
 只使用 Python 标准库，检查五类问题：
 
 1. 账本字段：批次信息、表头列数、行内必填项是否齐全；
-2. 状态枚举：通用八列只允许七种状态；项目 v1 十列按适配层枚举校验；
+2. 状态枚举：通用八列只允许七种状态；项目 v1 十三列按适配层枚举校验；
 3. 证据文件：证据列引用的相对路径必须真实存在；
 4. 旧结论词：出现“通过（含残余）”“基本可用”等直接判错；
 5. 重复状态源：同一目录多份 07 账本、同一账本多个账本段或重复 ID；
@@ -13,7 +13,7 @@
 8. 证据自述：v1 的截图必须有可读图片，且不能自述“只跑主路径”“门禁全绿没跑探针”“设备未验”却写通过。
 
 默认按账本内容自动识别格式：带 `acceptance-evidence: v1` marker 或
-“单项验收（证据账本）”段的按 v1 十列检查，其余按通用八列检查。
+“单项验收（证据账本）”段的按 v1 schema 2 十三列检查，其余按通用八列检查。
 也可以用 `--format legacy|v1` 显式指定；`--adapter` 会读取项目根、
 项目账本模板和账本枚举，决定证据路径基准、默认格式与允许取值。
 `--compat-debt` 仅为读取历史账本放行“带欠账/带欠账交付”；新账本默认拒绝，`--strict` 仍可用于叠加卡口。
@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -41,8 +42,8 @@ EVIDENCED_STATUSES = {"通过", "未通过", "阻塞"}
 # 模板里的结论占位符不是真实结论；空账本应只报缺字段，不要额外判结论非法。
 PLACEHOLDER_CONCLUSIONS = {"通过 / 未通过 / 阻塞", "通过/未通过/阻塞"}
 
-# v1 十列账本（默认模板格式，项目可再收窄枚举）。带 v1 marker 的账本按
-# 十列检查，避免把正常的扩展列误判成“缺少 ## 账本”或把“带欠账”状态
+# v1 schema 2 十三列账本（默认模板格式，项目可再收窄枚举）。带 v1 marker 的账本按
+# 十三列检查，避免把正常的扩展列误判成“缺少 ## 账本”或把“带欠账”状态
 # 误判成旧结论词；旧八列账本继续用 legacy 分支读取。
 V1_MARKER = "<!-- acceptance-evidence: v1 -->"
 V1_STATUSES = ("通过", "带欠账", "未交付-失败", "未交付-阻塞", "未覆盖")
@@ -53,6 +54,12 @@ V1_CONCLUSIONS = ("通过", "带欠账交付", "未交付（失败）", "未交�
 # 需要显式 --compat-debt 才放行，避免它被当成新的收口出口。
 V1_STRICT_STATUSES = tuple(status for status in V1_STATUSES if status != "带欠账")
 V1_STRICT_CONCLUSIONS = tuple(conclusion for conclusion in V1_CONCLUSIONS if conclusion != "带欠账交付")
+V1_PLACEHOLDER_CONCLUSIONS = {
+    "通过 / 带欠账交付 / 未交付（失败 / 阻塞）",
+    "通过/带欠账交付/未交付（失败/阻塞）",
+    "通过 / 带欠账交付 / 未交付",
+    "通过/带欠账交付/未交付",
+}
 
 
 @dataclass(frozen=True)
@@ -73,13 +80,17 @@ class LedgerPolicy:
 def normalize_conclusion(value: str) -> str:
     """把包结论里的半角括号统一成全角，便于和适配层枚举比较。"""
     return value.strip().replace("(", "（").replace(")", "）")
+V1_SCHEMA_VERSION = "2"
 V1_REQUIRED_COLUMNS = (
     "id",
+    "covers",
     "user_path",
     "expected",
     "evidence_type",
     "evidence",
+    "level",
     "producer",
+    "reviewer",
     "confidence",
     "time",
     "commit",
@@ -87,11 +98,14 @@ V1_REQUIRED_COLUMNS = (
 )
 V1_COLUMN_ALIASES = {
     "id": ("验收项id", "验收项 id", "id", "编号"),
+    "covers": ("覆盖ac", "覆盖 ac", "覆盖验收项", "covers"),
     "user_path": ("用户路径", "用户入口"),
     "expected": ("预期", "验收预期"),
     "evidence_type": ("证据类型",),
     "evidence": ("证据",),
+    "level": ("证据等级", "等级"),
     "producer": ("产出者", "产出人"),
+    "reviewer": ("复核者", "复核人"),
     "confidence": ("置信度",),
     "time": ("时间", "日期"),
     "commit": ("commit", "提交"),
@@ -99,22 +113,56 @@ V1_COLUMN_ALIASES = {
 }
 V1_DISPLAY_COLUMNS = {
     "id": "验收项 ID",
+    "covers": "覆盖 AC",
     "user_path": "用户路径",
     "expected": "预期",
     "evidence_type": "证据类型",
     "evidence": "证据",
+    "level": "证据等级",
     "producer": "产出者",
+    "reviewer": "复核者",
     "confidence": "置信度",
     "time": "时间",
     "commit": "commit",
     "status": "状态",
 }
-V1_PLACEHOLDER_CONCLUSIONS = {
-    "通过 / 带欠账交付 / 未交付（失败 / 阻塞）",
-    "通过/带欠账交付/未交付（失败/阻塞）",
-    "通过 / 带欠账交付 / 未交付",
-    "通过/带欠账交付/未交付",
+# v2 账本必须齐全的段；少一段就说明收口结构不完整，不能靠单行字段齐全蒙混。
+V1_REQUIRED_SECTIONS = (
+    "批次信息",
+    "用户旅程",
+    "包结论",
+    "外部证据登记",
+    "单项验收（证据账本）",
+    "证据身份",
+    "完成审计",
+    "独立复核",
+    "欠账",
+    "阻塞举证",
+)
+# 发布批次额外要求的两段：单向门/回滚风险，以及 F 类复盘。
+V1_RELEASE_SECTIONS = ("发布风险", "复盘")
+V1_REVIEW_VERDICTS = ("supports", "does-not-support", "unclear")
+V1_LEVELS = ("A", "B+", "B", "C")
+V1_STRUCTURED_KEYS = {
+    "截图": ("viewport", "pixel_hash"),
+    "像素": ("viewport", "pixel_hash"),
+    "性能": ("runs", "median"),
+    "DB": ("before", "after"),
 }
+# AC 判据里这些词只表达主观感受，无法判定通过与否；需要改成可观察结果。
+VAGUE_CRITERION_WORDS = (
+    "正常",
+    "流畅",
+    "友好",
+    "尽量",
+    "适当",
+    "合理",
+    "快速",
+    "稳定",
+    "基本可用",
+    "差不多",
+)
+CRITERION_EXEMPT_RE = re.compile(r"<!--\s*criterion-exempt:\s*(AC-[A-Za-z0-9-]+)\s+(.+?)\s*-->")
 V1_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*-[0-9]{2,3}$")
 V1_COMMIT_RE = re.compile(r"^(?:[0-9a-fA-F]{7,40}|工作区)$")
 V1_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -485,6 +533,22 @@ def git_is_ancestor(root: Path, commit: str) -> tuple[bool, Optional[str]]:
     return False, "无法判断 commit 与 HEAD 的祖先关系（项目根可能不是 git 仓库）"
 
 
+def git_path_dirty(root: Path, path: Path) -> tuple[bool, Optional[str]]:
+    """判断单个文件相对 HEAD 是否有未提交改动；非 git 仓库按“无改动”处理。"""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain", "--", str(path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as error:
+        return False, str(error)
+    if result.returncode != 0:
+        return False, result.stderr.strip() or None
+    return bool(result.stdout.strip()), None
+
+
 def scan_old_words(text: str, v1: bool = False) -> list[Issue]:
     """扫描旧结论词；跳过代码块和欠账表，避免把欠账描述本身误判成结论。
 
@@ -532,7 +596,7 @@ def parse_batch_info(
         return [Issue("W_BATCH_INFO", "“批次信息”段没有表格", section[1], severity="warning")]
 
     _, header, rows = table
-    required = ("任务卡", "被测版本", "环境", "执行者 / 复核者")
+    required = ("任务卡", "被测版本", "环境")
     values: dict[str, str] = {}
     for _, row in rows:
         if len(row) >= 2:
@@ -543,6 +607,11 @@ def parse_batch_info(
         if not value or (value.startswith("<") and value.endswith(">")):
             issues.append(
                 Issue("W_BATCH_INFO", f"批次信息“{name}”未填写", section[1], severity="warning")
+            )
+    if not values.get("执行者") or not values.get("复核者"):
+        if not values.get("执行者/复核者"):
+            issues.append(
+                Issue("W_BATCH_INFO", "批次信息缺少执行者或复核者", section[1], severity="warning")
             )
     return issues
 
@@ -618,7 +687,7 @@ def v1_value_empty(value: str) -> bool:
 
 
 def resolve_v1_columns(header: list[str]) -> dict[str, int]:
-    """把 v1 十列表头映射到字段键；列名允许少量中文别名。"""
+    """把 v1 schema 2 十三列表头映射到字段键；列名允许少量中文别名。"""
     mapping: dict[str, int] = {}
     used: set[int] = set()
     for key in V1_REQUIRED_COLUMNS:
@@ -646,13 +715,19 @@ def v1_conclusion_value(text: str) -> tuple[str, Optional[int]]:
     return "", None
 
 
-def expected_v1_conclusion(statuses: list[str], policy: Optional[LedgerPolicy] = None) -> str:
-    """由账本状态推导包结论；未覆盖不能再算“通过”或“带欠账”。
+def expected_v1_conclusion(
+    statuses: list[str],
+    policy: Optional[LedgerPolicy] = None,
+    journey_passed: bool = True,
+) -> str:
+    """由账本状态和旅程结论推导包结论。
 
-    “带欠账”是通用 v1 的正式状态，仍映射为“带欠账交付”；项目若在适配层
-    收窄掉该状态，就不会出现这条分支。未覆盖是尚未取证，按失败收口。
+    旅程没通过时，即使所有验收行都通过，整批也只能是“未交付（失败）”；
+    这是 v2 相对 v1 的关键收紧，防止账本单行全绿掩盖用户路径没走通。
     """
     current = policy or LedgerPolicy()
+    if not journey_passed:
+        return "未交付（失败）"
     if any(status == "未交付-失败" for status in statuses):
         return "未交付（失败）"
     if any(status == "未交付-阻塞" for status in statuses):
@@ -666,6 +741,743 @@ def expected_v1_conclusion(statuses: list[str], policy: Optional[LedgerPolicy] =
     return ""
 
 
+def find_section_prefix(
+    sections: list[tuple[str, int, list[tuple[int, str]]]], prefix: str
+) -> Optional[tuple[str, int, list[tuple[int, str]]]]:
+    """按标题前缀找段，兼容“1. 卡点”“## 卡点”两种写法。"""
+    for section in sections:
+        if section[0] == prefix or section[0].startswith(prefix):
+            return section
+    return None
+
+
+def table_key_values(
+    section: tuple[str, int, list[tuple[int, str]]]
+) -> tuple[dict[str, str], dict[str, int]]:
+    """读取两列表格的键值对，返回值表和键所在行号。"""
+    values: dict[str, str] = {}
+    lines: dict[str, int] = {}
+    table = parse_first_table(section[2])
+    if table is None:
+        return values, lines
+    _, _, rows = table
+    for number, row in rows:
+        if len(row) >= 2:
+            key = normalize_header(row[0])
+            values[key] = row[1].strip()
+            lines[key] = number
+    return values, lines
+
+
+def parse_batch_values(sections) -> tuple[dict[str, str], dict[str, int], Optional[int]]:
+    """读取 v2 批次信息；返回值、行号和段起始行。"""
+    section = find_section(sections, "批次信息")
+    if section is None:
+        return {}, {}, None
+    values, lines = table_key_values(section)
+    return values, lines, section[1]
+
+
+def parse_task_card_acs(task_text: str) -> list[tuple[str, str, int]]:
+    """从任务卡读取 AC 清单：返回 [(AC-ID, 判据, 行号)]。"""
+    sections = split_sections(task_text)
+    for name in ("验收项表", "验收项", "验收标准"):
+        section = find_section(sections, name)
+        if section is None:
+            continue
+        table = parse_first_table(section[2])
+        if table is None:
+            continue
+        _, header, rows = table
+        normalized = [normalize_header(item) for item in header]
+        id_index = None
+        criterion_index = None
+        for index, item in enumerate(normalized):
+            if id_index is None and item in {"验收项id", "验收项 id", "id", "编号", "ac-id", "ac id"}:
+                id_index = index
+            if criterion_index is None and (
+                item in {"判据", "验收判据", "验收标准", "预期", "通过判据"}
+                or item.startswith("判据（")
+                or item.startswith("判据(")
+            ):
+                criterion_index = index
+        if id_index is None:
+            continue
+        result: list[tuple[str, str, int]] = []
+        for number, row in rows:
+            ac_id = cell(row, id_index).strip()
+            if not ac_id:
+                continue
+            result.append((ac_id, cell(row, criterion_index).strip(), number))
+        return result
+    return []
+
+
+def parse_ac_ids(value: str) -> list[str]:
+    """从“AC-01、AC-02”之类单元格里提取 AC ID。"""
+    return re.findall(r"AC-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*", value)
+
+
+def read_scope_lock(task_text: str) -> tuple[list[str], list[str]]:
+    """读取任务卡范围锁，返回 (做, 不做) 路径列表。"""
+    sections = split_sections(task_text)
+    section = find_section(sections, "范围锁")
+    if section is None:
+        return [], []
+    table = parse_first_table(section[2])
+    if table is None:
+        return [], []
+    _, header, rows = table
+    normalized = [normalize_header(item) for item in header]
+    type_index = next((i for i, item in enumerate(normalized) if item in {"类型", "做不做"}), None)
+    path_index = next((i for i, item in enumerate(normalized) if item in {"路径", "范围", "文件"}), None)
+    if type_index is None or path_index is None:
+        return [], []
+    allow: list[str] = []
+    deny: list[str] = []
+    for _, row in rows:
+        kind = cell(row, type_index).strip()
+        value = cell(row, path_index).strip()
+        if not value or value.startswith("<"):
+            continue
+        if kind in {"做", "允许", "范围"}:
+            allow.append(value)
+        elif kind in {"不做", "禁止", "范围外"}:
+            deny.append(value)
+    return allow, deny
+
+
+def check_task_card(
+    ledger_dir: Path,
+    batch_values: dict[str, str],
+    issues: list[Issue],
+) -> tuple[Optional[Path], list[tuple[str, str, int]], str, str]:
+    """校验任务卡结构并返回 AC 清单、车道和风险。"""
+    card_name = batch_values.get("任务卡", "").strip()
+    card_path: Optional[Path] = None
+    if card_name and not v1_text_empty(card_name):
+        candidate = Path(card_name)
+        if not candidate.is_absolute():
+            candidate = ledger_dir / candidate
+        if candidate.exists():
+            card_path = candidate
+    if card_path is None:
+        fallback = ledger_dir / "task-card.md"
+        if fallback.exists():
+            card_path = fallback
+    if card_path is None:
+        issues.append(Issue("E_TASKCARD", "找不到任务卡；v2 账本必须能和任务卡 AC 双向映射", None))
+        return None, [], "", ""
+
+    text = card_path.read_text(encoding="utf-8")
+    sections = split_sections(text)
+    acs = parse_task_card_acs(text)
+    if not acs:
+        issues.append(Issue("E_TASKCARD", "任务卡没有可解析的“验收项表”或 AC 清单", None))
+
+    lane = ""
+    risk = ""
+    complexity = ""
+    lane_section = find_section(sections, "车道与风险")
+    if lane_section is None:
+        issues.append(Issue("E_TASK_LANE", "任务卡缺少“## 车道与风险”段", None))
+    else:
+        values, _ = table_key_values(lane_section)
+        lane = values.get("车道", "").strip()
+        risk = values.get("风险", "").strip()
+        complexity = values.get("复杂度", "").strip()
+        if lane not in {"轻验收", "全流程"}:
+            issues.append(Issue("E_TASK_LANE", "车道只能是“轻验收”或“全流程”", lane_section[1]))
+        hard_trigger = (
+            "跨模块" in complexity
+            or any(word in risk for word in ("不可逆", "数据", "安全"))
+        )
+        if hard_trigger and lane != "全流程":
+            issues.append(
+                Issue(
+                    "E_TASK_LANE",
+                    "跨模块、不可逆、数据或安全风险必须走全流程车道",
+                    lane_section[1],
+                )
+            )
+
+    if lane == "全流程":
+        grill = find_section(sections, "立卡前盘问")
+        if grill is None:
+            issues.append(Issue("E_GRILL", "全流程任务缺少“## 立卡前盘问”段", None))
+        else:
+            table = parse_first_table(grill[2])
+            useful = 0
+            if table is not None:
+                _, _, rows = table
+                for number, row in rows:
+                    decision = cell(row, len(row) - 1).strip()
+                    if decision and not decision.startswith("<") and decision not in {"—", "-"}:
+                        useful += 1
+            if useful < 3:
+                issues.append(
+                    Issue("E_GRILL", "立卡前盘问至少记录 3 条已确认的问题与用户决定", grill[1])
+                )
+
+        spec = find_section_prefix(sections, "规格摘要")
+        if spec is None:
+            issues.append(Issue("E_SPEC_LITE", "全流程任务缺少“## 规格摘要”段", None))
+        else:
+            values, _ = table_key_values(spec)
+            required_spec = ("问题", "用户", "目标", "范围外", "关键决定", "验收方向")
+            missing_spec = [name for name in required_spec if not values.get(name, "").strip()]
+            if missing_spec:
+                issues.append(
+                    Issue(
+                        "E_SPEC_LITE",
+                        "规格摘要缺字段：" + "、".join(missing_spec),
+                        spec[1],
+                    )
+                )
+
+    scope = find_section(sections, "范围锁")
+    if scope is None:
+        issues.append(Issue("E_SCOPE_LOCK", "任务卡缺少“## 范围锁”段", None))
+    else:
+        allow, _ = read_scope_lock(text)
+        if not allow:
+            issues.append(Issue("E_SCOPE_LOCK", "范围锁没有填写任何“做”路径", scope[1]))
+
+    exemptions = {match.group(1) for match in CRITERION_EXEMPT_RE.finditer(text)}
+    for ac_id, criterion, number in acs:
+        if not criterion:
+            issues.append(Issue("E_CRITERION", f"{ac_id} 没有可判定判据", number))
+            continue
+        hit = next((word for word in VAGUE_CRITERION_WORDS if word in criterion), "")
+        if not hit and re.search(r"(?:^|[，。；、\s])等(?:[，。；、\s]|$)", criterion):
+            hit = "等"
+        if hit and ac_id not in exemptions:
+            issues.append(
+                Issue(
+                    "E_CRITERION",
+                    f"{ac_id} 的判据含模糊词“{hit}”，请改成可观察结果或加 criterion-exempt 说明",
+                    number,
+                )
+            )
+
+    return card_path, acs, lane, risk
+
+
+def check_journey_section(
+    ledger_dir: Path,
+    sections,
+    rows: list[dict],
+    risk: str,
+    issues: list[Issue],
+) -> bool:
+    """校验旅程卡、旅程结论和 07 行到旅程步骤的映射。"""
+    section = find_section(sections, "用户旅程")
+    if section is None:
+        return False
+    text = "\n".join(line for _, line in section[2])
+    card_match = re.search(r"旅程卡[:：]\s*(.+)", text)
+    conclusion_match = re.search(r"结论[:：]\s*(.+)", text)
+    conclusion = conclusion_match.group(1).strip() if conclusion_match else ""
+    cards = []
+    if card_match:
+        cards = [
+            item.strip().strip("`")
+            for item in re.split(r"[,，、;；]", card_match.group(1))
+            if item.strip()
+        ]
+    if not cards:
+        issues.append(Issue("E_JOURNEY_MISSING", "用户旅程段没有填写旅程卡路径", section[1]))
+        return False
+    if v1_text_empty(conclusion) or conclusion not in {"通过", "未通过", "阻塞", "未覆盖"}:
+        issues.append(Issue("E_JOURNEY", "用户旅程结论必须是 通过/未通过/阻塞/未覆盖", section[1]))
+        return False
+    if conclusion != "通过":
+        issues.append(
+            Issue("E_JOURNEY_NOT_PASSED", f"旅程结论为“{conclusion}”，整批不得判通过", section[1])
+        )
+
+    passed = conclusion == "通过"
+    for name in cards:
+        card_path = ledger_dir / name
+        if not card_path.exists():
+            issues.append(Issue("E_JOURNEY_MISSING", f"旅程卡不存在：{name}", section[1]))
+            passed = False
+            continue
+        card_text = card_path.read_text(encoding="utf-8")
+        card_sections = split_sections(card_text)
+        card_conclusion_section = find_section(card_sections, "结论")
+        card_conclusion = ""
+        if card_conclusion_section is not None:
+            match = re.search(
+                r"结论[:：]\s*(通过|未通过|阻塞|未覆盖)",
+                "\n".join(line for _, line in card_conclusion_section[2]),
+            )
+            card_conclusion = match.group(1) if match else ""
+        if card_conclusion != "通过":
+            issues.append(
+                Issue("E_JOURNEY_CARD", f"旅程卡 {name} 自身结论不是“通过”", section[1])
+            )
+            passed = False
+
+        card_id = "J-01"
+        base = find_section(card_sections, "基本信息")
+        if base is not None:
+            values, _ = table_key_values(base)
+            card_id = values.get("旅程id", card_id) or card_id
+        step_section = find_section(card_sections, "步骤与不变量")
+        steps: list[int] = []
+        if step_section is not None:
+            table = parse_first_table(step_section[2])
+            if table is not None:
+                _, header, step_rows = table
+                normalized = [normalize_header(item) for item in header]
+                index = next(
+                    (i for i, item in enumerate(normalized) if item in {"步骤", "序号", "步骤号", "#", "编号"}),
+                    None,
+                )
+                if index is not None:
+                    for _, row in step_rows:
+                        value = cell(row, index).strip()
+                        if value.isdigit():
+                            steps.append(int(value))
+        if not steps:
+            issues.append(Issue("E_JOURNEY_STEP", f"旅程卡 {name} 没有可解析的步骤表", section[1]))
+            passed = False
+        for step in steps:
+            pattern = re.compile(rf"{re.escape(card_id)}\s*/\s*步骤\s*{step}(?!\d)")
+            if not any(pattern.search(row["user_path"]) for row in rows):
+                issues.append(
+                    Issue(
+                        "E_JOURNEY_STEP",
+                        f"旅程步骤 {card_id} 步骤 {step} 没有对应的 07 验收行",
+                        section[1],
+                    )
+                )
+                passed = False
+
+        if any(word in risk for word in ("不可逆", "数据", "安全")):
+            negative = find_section(card_sections, "异常、空、错误分支")
+            if negative is None:
+                issues.append(
+                    Issue("E_JOURNEY_NEGATIVE", f"高风险旅程卡 {name} 缺少异常/空/错误分支", section[1])
+                )
+                passed = False
+            else:
+                table = parse_first_table(negative[2])
+                filled = False
+                if table is not None:
+                    _, _, negative_rows = table
+                    for _, row in negative_rows:
+                        if all(item.strip() and not item.strip().startswith("<") for item in row):
+                            filled = True
+                            break
+                if not filled:
+                    issues.append(
+                        Issue("E_JOURNEY_NEGATIVE", f"旅程卡 {name} 的异常分支没有填写", section[1])
+                    )
+                    passed = False
+    return passed
+
+
+def check_completion_audit(
+    sections,
+    acs: list[tuple[str, str, int]],
+    batch_build: str,
+    root: Path,
+    ledger_dir: Path,
+    issues: list[Issue],
+) -> None:
+    """检查完成审计表：每条 AC 都要有场景、构建、读数和证据。"""
+    section = find_section(sections, "完成审计")
+    if section is None:
+        return
+    table = parse_first_table(section[2])
+    if table is None:
+        issues.append(Issue("E_COMPLETION_AUDIT", "完成审计段没有表格", section[1]))
+        return
+    _, header, rows = table
+    normalized = [normalize_header(item) for item in header]
+    indexes = {}
+    for key, aliases in {
+        "definition": ("完成定义", "验收项", "完成项"),
+        "ac": ("对应ac", "对应 ac", "ac", "验收项id"),
+        "scenario": ("实际场景/命令", "实际场景命令", "场景/命令", "实际场景"),
+        "build": ("最终构建", "构建", "构建号"),
+        "reading": ("读数", "结果", "实际读数"),
+        "evidence": ("证据", "证据路径"),
+    }.items():
+        indexes[key] = next((i for i, item in enumerate(normalized) if item in aliases), None)
+    missing = [key for key, index in indexes.items() if index is None]
+    if missing:
+        issues.append(
+            Issue("E_COMPLETION_AUDIT", "完成审计表头缺列：" + "、".join(missing), section[1])
+        )
+        return
+    covered: set[str] = set()
+    for number, row in rows:
+        values = {key: cell(row, index).strip() for key, index in indexes.items()}
+        if all(not value for value in values.values()):
+            continue
+        empty = [key for key, value in values.items() if not value or value.startswith("<")]
+        if empty:
+            issues.append(
+                Issue("E_COMPLETION_AUDIT", "完成审计行有空字段：" + "、".join(empty), number)
+            )
+        ids = parse_ac_ids(values["ac"])
+        if not ids:
+            issues.append(Issue("E_COMPLETION_AC", "完成审计行没有对应 AC", number))
+        covered.update(ids)
+        if batch_build and values["build"] not in {batch_build, "同批次", "本批次"}:
+            issues.append(
+                Issue(
+                    "E_COMPLETION_AUDIT",
+                    f"完成审计的最终构建“{values['build']}”与批次构建“{batch_build}”不一致",
+                    number,
+                )
+            )
+        paths = extract_paths(values["evidence"])
+        if not paths:
+            issues.append(Issue("E_COMPLETION_EVIDENCE", "完成审计行没有真实证据路径", number))
+        else:
+            for candidate in paths:
+                if resolve_existing_path(candidate, root, ledger_dir) is None:
+                    issues.append(
+                        Issue("E_COMPLETION_EVIDENCE", f"完成审计证据不存在：{candidate}", number)
+                    )
+    expected = {ac_id for ac_id, _, _ in acs}
+    uncovered = sorted(expected - covered)
+    if uncovered:
+        issues.append(
+            Issue("E_COMPLETION_AC", "完成审计缺少这些 AC 的记录：" + "、".join(uncovered), section[1])
+        )
+
+
+def check_independent_review(
+    sections,
+    acs: list[tuple[str, str, int]],
+    rows: list[dict],
+    batch_values: dict[str, str],
+    root: Path,
+    ledger_dir: Path,
+    issues: list[Issue],
+) -> None:
+    """检查独立复核：逐 AC 表态、复跑命令和产出者≠复核者。"""
+    section = find_section(sections, "独立复核")
+    if section is None:
+        return
+    table = parse_first_table(section[2])
+    if table is None:
+        issues.append(Issue("E_REVIEW", "独立复核段没有表格", section[1]))
+        return
+    _, header, review_rows = table
+    normalized = [normalize_header(item) for item in header]
+    indexes = {}
+    for key, aliases in {
+        "ac": ("ac-id", "ac id", "验收项id", "验收项 id"),
+        "verdict": ("复核结论", "结论"),
+        "command": ("复跑命令", "命令"),
+        "evidence": ("复跑证据", "证据"),
+        "reviewer": ("复核人", "复核者"),
+        "time": ("时间", "日期"),
+    }.items():
+        indexes[key] = next((i for i, item in enumerate(normalized) if item in aliases), None)
+    missing = [key for key, index in indexes.items() if index is None]
+    if missing:
+        issues.append(Issue("E_REVIEW", "独立复核表头缺列：" + "、".join(missing), section[1]))
+        return
+
+    batch_producer = batch_values.get("执行者", "").strip()
+    batch_reviewer = batch_values.get("复核者", "").strip()
+    if batch_producer and batch_reviewer and batch_producer == batch_reviewer:
+        issues.append(
+            Issue("E_REVIEW_INDEPENDENT", "批次执行者与复核者不能是同一个人", section[1])
+        )
+
+    covered: dict[str, list[dict]] = {}
+    for number, row in review_rows:
+        values = {key: cell(row, index).strip() for key, index in indexes.items()}
+        if all(not value for value in values.values()):
+            continue
+        ids = parse_ac_ids(values["ac"])
+        if not ids:
+            issues.append(Issue("E_REVIEW_AC", "复核行没有 AC ID", number))
+        if values["verdict"] not in V1_REVIEW_VERDICTS:
+            issues.append(
+                Issue(
+                    "E_REVIEW_AC",
+                    "复核结论只能是 supports / does-not-support / unclear",
+                    number,
+                )
+            )
+        if not values["reviewer"]:
+            issues.append(Issue("E_REVIEW_INDEPENDENT", "复核人不能为空", number))
+        elif batch_reviewer and values["reviewer"] != batch_reviewer:
+            issues.append(
+                Issue(
+                    "E_REVIEW_INDEPENDENT",
+                    f"复核人“{values['reviewer']}”与批次复核者“{batch_reviewer}”不一致",
+                    number,
+                )
+            )
+        if values["time"] and not V1_DATE_RE.fullmatch(values["time"]):
+            issues.append(Issue("E_REVIEW", f"复核时间“{values['time']}”不是 YYYY-MM-DD", number))
+        paths = extract_paths(values["evidence"])
+        if not paths:
+            issues.append(Issue("E_REVIEW", "复核行没有复跑证据路径", number))
+        else:
+            for candidate in paths:
+                if resolve_existing_path(candidate, root, ledger_dir) is None:
+                    issues.append(Issue("E_REVIEW", f"复跑证据不存在：{candidate}", number))
+        for ac_id in ids:
+            covered.setdefault(ac_id, []).append(values)
+
+    expected = {ac_id for ac_id, _, _ in acs}
+    for ac_id in sorted(expected):
+        verdicts = [item["verdict"] for item in covered.get(ac_id, [])]
+        if "supports" not in verdicts:
+            issues.append(
+                Issue("E_REVIEW_AC", f"{ac_id} 没有独立复核的 supports 结论", section[1])
+            )
+    a_ids = {
+        ac_id
+        for row in rows
+        if row["status"] == "通过" and row["level"] == "A"
+        for ac_id in row["covers"]
+    }
+    command_rows = [
+        item
+        for ac_id, items in covered.items()
+        for item in items
+        if item["command"] and not item["command"].startswith("<")
+    ]
+    if not command_rows:
+        issues.append(Issue("E_REVIEW_COMMAND", "独立复核没有复跑任何命令", section[1]))
+    elif a_ids and not any(
+        set(parse_ac_ids(item["ac"])) & a_ids for item in command_rows
+    ):
+        issues.append(Issue("E_REVIEW_COMMAND", "至少要对一条 A 级证据复跑命令", section[1]))
+
+    for row in rows:
+        if row["reviewer"] and row["producer"] and row["reviewer"] == row["producer"]:
+            issues.append(
+                Issue(
+                    "E_REVIEW_INDEPENDENT",
+                    f"{row['id']} 的产出者与复核者是同一人“{row['producer']}”",
+                    row["line"],
+                )
+            )
+
+
+def read_structured_readings(value: str) -> dict[str, str]:
+    """解析“viewport=1280x800;pixel_hash=...”这类结构化读数。"""
+    result: dict[str, str] = {}
+    for item in re.split(r"[;；]", value):
+        if not item.strip():
+            continue
+        if "=" not in item:
+            continue
+        key, raw = item.split("=", 1)
+        result[key.strip()] = raw.strip()
+    return result
+
+
+def check_evidence_identity(
+    sections,
+    rows: list[dict],
+    batch_build: str,
+    root: Path,
+    ledger_dir: Path,
+    issues: list[Issue],
+) -> None:
+    """核对证据身份表：SHA-256、字节数、构建、环境和结构化读数。"""
+    section = find_section(sections, "证据身份")
+    if section is None:
+        return
+    table = parse_first_table(section[2])
+    if table is None:
+        issues.append(Issue("E_ARTIFACT", "证据身份段没有表格", section[1]))
+        return
+    _, header, identity_rows = table
+    normalized = [normalize_header(item) for item in header]
+    indexes = {}
+    for key, aliases in {
+        "evidence": ("证据", "证据路径"),
+        "sha256": ("sha-256", "sha256"),
+        "bytes": ("字节数", "大小"),
+        "build": ("构建号", "构建"),
+        "environment": ("环境",),
+        "time": ("取证时间", "时间"),
+        "workspace": ("workspace_hash", "workspace hash", "工作区哈希"),
+        "structured": ("结构化读数", "读数"),
+    }.items():
+        indexes[key] = next((i for i, item in enumerate(normalized) if item in aliases), None)
+    missing = [key for key, index in indexes.items() if index is None]
+    if missing:
+        issues.append(Issue("E_ARTIFACT", "证据身份表头缺列：" + "、".join(missing), section[1]))
+        return
+
+    registered: dict[Path, dict[str, str]] = {}
+    for number, row in identity_rows:
+        values = {key: cell(row, index).strip() for key, index in indexes.items()}
+        if all(not value for value in values.values()):
+            continue
+        for candidate in extract_paths(values["evidence"]):
+            resolved = resolve_existing_path(candidate, root, ledger_dir)
+            if resolved is None:
+                issues.append(Issue("E_ARTIFACT", f"证据身份登记了不存在的文件：{candidate}", number))
+                continue
+            registered[resolved] = values
+            if not re.fullmatch(r"[0-9a-fA-F]{64}", values["sha256"]):
+                issues.append(Issue("E_ARTIFACT_HASH", f"{candidate} 的 SHA-256 格式不对", number))
+            else:
+                actual = hashlib.sha256(resolved.read_bytes()).hexdigest()
+                if values["sha256"].lower() != actual:
+                    issues.append(
+                        Issue("E_ARTIFACT_HASH", f"{candidate} 的 SHA-256 与文件实际值不一致", number)
+                    )
+            if not values["bytes"].isdigit():
+                issues.append(Issue("E_ARTIFACT_HASH", f"{candidate} 的字节数不是整数", number))
+            elif int(values["bytes"]) != resolved.stat().st_size:
+                issues.append(
+                    Issue("E_ARTIFACT_HASH", f"{candidate} 的字节数与文件实际大小不一致", number)
+                )
+            if not values["build"] or (
+                batch_build and values["build"] not in {batch_build, "同批次", "本批次"}
+            ):
+                issues.append(
+                    Issue(
+                        "E_ARTIFACT_BUILD",
+                        f"{candidate} 的构建号“{values['build']}”与批次“{batch_build}”不一致",
+                        number,
+                    )
+                )
+            if not values["environment"]:
+                issues.append(Issue("E_ARTIFACT_ENV", f"{candidate} 没有登记环境", number))
+            if not V1_DATE_RE.fullmatch(values["time"]):
+                issues.append(Issue("E_ARTIFACT", f"{candidate} 的取证时间不是 YYYY-MM-DD", number))
+            if not re.fullmatch(r"[0-9a-fA-F]{64}", values["workspace"]):
+                issues.append(
+                    Issue("E_ARTIFACT_ENV", f"{candidate} 的 workspace_hash 不是 64 位哈希", number)
+                )
+
+    for row in rows:
+        if row["status"] == "未覆盖":
+            continue
+        for path in row["paths"]:
+            if path not in registered:
+                issues.append(
+                    Issue(
+                        "E_ARTIFACT_MISSING",
+                        f"{row['id']} 的证据 {path.name} 没有在“证据身份”表登记",
+                        row["line"],
+                    )
+                )
+                continue
+            values = registered[path]
+            structured = read_structured_readings(values["structured"])
+            required_keys = V1_STRUCTURED_KEYS.get(row["type"], ())
+            missing_keys = [key for key in required_keys if not structured.get(key)]
+            if missing_keys:
+                issues.append(
+                    Issue(
+                        "E_ARTIFACT_STRUCTURE",
+                        f"{row['id']} 的{row['type']}证据缺少结构化读数：{'、'.join(missing_keys)}",
+                        row["line"],
+                    )
+                )
+            if row["type"] in {"截图", "像素"} and structured.get("pixel_hash"):
+                if not re.fullmatch(r"[0-9a-fA-F]{64}", structured["pixel_hash"]):
+                    issues.append(
+                        Issue("E_ARTIFACT_STRUCTURE", f"{row['id']} 的 pixel_hash 不是 64 位哈希", row["line"])
+                    )
+            if row["type"] in {"截图", "像素"} and structured.get("viewport"):
+                if not re.fullmatch(r"\d+x\d+", structured["viewport"]):
+                    issues.append(
+                        Issue("E_ARTIFACT_STRUCTURE", f"{row['id']} 的 viewport 应为 宽x高", row["line"])
+                    )
+            if row["type"] == "性能" and structured.get("runs"):
+                if not structured["runs"].isdigit() or int(structured["runs"]) <= 0:
+                    issues.append(
+                        Issue("E_ARTIFACT_STRUCTURE", f"{row['id']} 的 runs 必须是正整数", row["line"])
+                    )
+
+
+def check_blocking_form(
+    ledger_dir: Path,
+    rows: list[dict],
+    issues: list[Issue],
+) -> None:
+    """校验阻塞举证单：四维尝试、正对照和解锁条件。"""
+    blocked = [row for row in rows if row["status"] == "未交付-阻塞"]
+    if not blocked:
+        return
+    form = ledger_dir / "blocking-form.md"
+    if not form.exists():
+        issues.append(Issue("E_BLOCKING_FORM", "有阻塞行但没有 blocking-form.md", blocked[0]["line"]))
+        return
+    text = form.read_text(encoding="utf-8")
+    sections = split_sections(text)
+    required_prefixes = ("1.", "2.", "3.", "4.", "5.", "6.", "7.")
+    for prefix in required_prefixes:
+        if find_section_prefix(sections, prefix) is None:
+            issues.append(Issue("E_BLOCKING_FORM", f"阻塞举证单缺少第 {prefix} 节", None))
+    point = find_section_prefix(sections, "1.")
+    if point is not None:
+        values, _ = table_key_values(point)
+        if not values.get("卡点") or not values.get("现象"):
+            issues.append(Issue("E_BLOCKING_FORM", "阻塞举证单的卡点/现象为空", point[1]))
+    positive = find_section_prefix(sections, "3.")
+    if positive is not None:
+        table = parse_first_table(positive[2])
+        ok = False
+        if table is not None:
+            _, header, positive_rows = table
+            normalized = [normalize_header(item) for item in header]
+            result_index = next(
+                (i for i, item in enumerate(normalized) if item in {"结果", "正对照结果"}), None
+            )
+            for _, row in positive_rows:
+                value = cell(row, result_index).strip() if result_index is not None else ""
+                if "通过" in value:
+                    ok = True
+        if not ok:
+            issues.append(Issue("E_BLOCKING_FORM", "阻塞举证单没有正对照通过记录", positive[1]))
+    attempts = find_section_prefix(sections, "4.")
+    if attempts is not None:
+        table = parse_first_table(attempts[2])
+        dimensions: dict[str, bool] = {}
+        if table is not None:
+            _, header, attempt_rows = table
+            normalized = [normalize_header(item) for item in header]
+            dim_index = next((i for i, item in enumerate(normalized) if "维度" in item), None)
+            excluded_index = next(
+                (i for i, item in enumerate(normalized) if "排除" in item), None
+            )
+            for _, row in attempt_rows:
+                dim = cell(row, dim_index).strip() if dim_index is not None else ""
+                excluded = cell(row, excluded_index).strip() if excluded_index is not None else ""
+                if dim:
+                    filled = all(item.strip() and not item.strip().startswith("<") for item in row)
+                    dimensions[dim] = filled and excluded in {"是", "已排除"}
+        for name in ("环境", "注入通道", "判据", "数据"):
+            if not dimensions.get(name):
+                issues.append(
+                    Issue("E_BLOCKING_FORM", f"阻塞举证单四维中的“{name}”没有完整尝试记录", attempts[1])
+                )
+    unlock = find_section_prefix(sections, "7.")
+    if unlock is not None:
+        bullets = [
+            line.strip()[1:].strip()
+            for _, line in unlock[2]
+            if line.strip().startswith("-")
+        ]
+        bullets = [item for item in bullets if item and not item.startswith("<")]
+        if len(bullets) < 4:
+            issues.append(
+                Issue("E_BLOCKING_FORM", "解锁条件至少写清谁提供什么、如何复验、判据、影响", unlock[1])
+            )
+
+
 def check_v1_ledger(
     path: Path,
     root: Path,
@@ -674,13 +1486,11 @@ def check_v1_ledger(
     policy: Optional[LedgerPolicy] = None,
     strict: bool = False,
 ) -> tuple[list[Issue], dict[str, int], str]:
-    """检查项目 v1 十列五节账本。
+    """检查项目 v1/v2 账本。
 
-    参数：
-        policy: 项目适配层声明的允许枚举；缺省用通用五状态。
-        strict: 为 True 时拒绝任何“带欠账/带欠账交付”。
-
-    字段、枚举、证据路径、commit 真实性和证据时效都按同一套底线检查，
+    v2 在早期十列基础上增加“覆盖 AC、证据等级、复核者”三列，并要求
+    用户旅程、证据身份、完成审计、独立复核、阻塞举证等段齐全。字段、
+    枚举、证据路径、commit 真实性和证据时效仍按同一套底线检查，
     避免项目模板绕过通用校验器。
     """
     current_policy = policy or LedgerPolicy()
@@ -690,10 +1500,35 @@ def check_v1_ledger(
     conclusion = ""
     conclusion_line: Optional[int] = None
 
-    required_sections = ("包结论", "外部证据登记", "单项验收（证据账本）", "欠账", "阻塞举证")
-    for name in required_sections:
+    for name in V1_REQUIRED_SECTIONS:
         if find_section(sections, name) is None:
             issues.append(Issue("E_STRUCTURE", f"缺少“## {name}”段"))
+
+    batch_values, batch_lines, batch_start = parse_batch_values(sections)
+    if batch_start is None:
+        issues.append(Issue("E_BATCH_INFO", "缺少“## 批次信息”段"))
+    else:
+        for name in ("任务卡", "被测版本", "环境", "执行者", "复核者", "收口时间", "生成日期"):
+            value = batch_values.get(normalize_header(name), "").strip()
+            if v1_text_empty(value):
+                issues.append(Issue("E_BATCH_INFO", f"批次信息“{name}”未填写", batch_start))
+        for name in ("收口时间", "生成日期"):
+            value = batch_values.get(normalize_header(name), "").strip()
+            if value and not V1_DATE_RE.fullmatch(value):
+                issues.append(Issue("E_BATCH_INFO", f"批次信息“{name}”不是 YYYY-MM-DD", batch_start))
+
+    build_text = batch_values.get("被测版本", "")
+    build_match = re.search(r"构建号[:：]\s*([^；;，,\s]+)", build_text)
+    batch_build = build_match.group(1).strip() if build_match else ""
+    environment = batch_values.get("环境", "")
+    is_release = "release" in environment.lower() or "发布" in environment
+    if is_release:
+        for name in V1_RELEASE_SECTIONS:
+            if find_section(sections, name) is None:
+                issues.append(Issue("E_RELEASE_SECTION", f"发布批次缺少“## {name}”段"))
+
+    card_path, acs, _, risk = check_task_card(path.parent, batch_values, issues)
+    journey_passed = False
 
     package = find_section(sections, "包结论")
     if package is not None:
@@ -714,6 +1549,14 @@ def check_v1_ledger(
             value = match.group(1).strip() if match else ""
             if v1_text_empty(value):
                 issues.append(Issue("E_FIELD", f"包结论的“{label}”为空", package[1]))
+        journey_match = re.search(r"旅程结论[:：]\s*.*?(通过|未通过|阻塞|未覆盖)", package_text)
+        journey_value = journey_match.group(1).strip() if journey_match else ""
+        if not journey_value or v1_text_empty(journey_value):
+            issues.append(Issue("E_FIELD", "包结论的“旅程结论”为空", package[1]))
+        elif journey_value != "通过":
+            issues.append(
+                Issue("E_JOURNEY_NOT_PASSED", f"包结论写明旅程结论“{journey_value}”，不得判通过", package[1])
+            )
 
     ledger_section = find_section(sections, "单项验收（证据账本）")
     if ledger_section is None:
@@ -741,12 +1584,14 @@ def check_v1_ledger(
 
     seen_ids: dict[str, int] = {}
     ledger_dir = path.parent
+    row_records: list[dict] = []
+    image_uses: dict[Path, int] = {}
     for number, row in rows:
         if len(row) != len(header):
             issues.append(
                 Issue(
                     "E_COLUMNS",
-                    f"该行有 {len(row)} 列，表头有 {len(header)} 列；一行必须完整对应十列",
+                    f"该行有 {len(row)} 列，表头有 {len(header)} 列；一行必须完整对应十三列",
                     number,
                 )
             )
@@ -766,12 +1611,13 @@ def check_v1_ledger(
 
         for key in V1_REQUIRED_COLUMNS:
             # id 与 status 分别有格式/枚举检查；未覆盖行允许证据类字段填 “—”，
-            # 因为该状态的定义就是“还没取证”。
+            # 但 AC 映射、产出者和复核者仍必须写清楚。
             if key in {"id", "status"}:
                 continue
             if status == "未覆盖" and key in {
                 "evidence_type",
                 "evidence",
+                "level",
                 "confidence",
                 "time",
                 "commit",
@@ -779,6 +1625,12 @@ def check_v1_ledger(
                 continue
             if v1_value_empty(values[key]):
                 issues.append(Issue("E_FIELD", f"{V1_DISPLAY_COLUMNS[key]}为空", number))
+
+        covers = parse_ac_ids(values["covers"])
+        if not covers:
+            issues.append(
+                Issue("E_COVERS", f"{item_id or '该行'} 没有填写覆盖的 AC（如 AC-01）", number)
+            )
 
         evidence_type = values["evidence_type"]
         if (
@@ -794,6 +1646,10 @@ def check_v1_ledger(
                     number,
                 )
             )
+
+        level = values["level"].strip()
+        if status != "未覆盖" and level and level not in V1_LEVELS:
+            issues.append(Issue("E_LEVEL", f"证据等级“{level}”只能是 A/B+/B/C", number))
 
         confidence = values["confidence"]
         if (
@@ -864,6 +1720,14 @@ def check_v1_ledger(
             if status == "带欠账":
                 debt_lines.append(number)
 
+        producer = values["producer"].strip()
+        reviewer = values["reviewer"].strip()
+        if producer and reviewer and producer == reviewer:
+            issues.append(
+                Issue("E_REVIEW_INDEPENDENT", f"{item_id or '该行'} 的产出者与复核者是同一人", number)
+            )
+
+        evidence_paths: list[Path] = []
         # 除“未覆盖”外，每种状态都必须给证据；状态本身允许“未交付”，
         # 但“没证据的失败/阻塞”无法复核，仍按缺证据拒绝。
         if status != "未覆盖":
@@ -873,7 +1737,6 @@ def check_v1_ledger(
                     Issue("E_MISSING_EVIDENCE", f"{item_id or '该行'}（{status}）的证据列为空", number)
                 )
             else:
-                evidence_paths: list[Path] = []
                 for candidate in extract_paths(evidence):
                     resolved_path = resolve_existing_path(candidate, root, ledger_dir)
                     if resolved_path is None:
@@ -884,16 +1747,43 @@ def check_v1_ledger(
                                 number,
                             )
                         )
+                        continue
+                    evidence_paths.append(resolved_path)
+                    if resolved_path.suffix.lower() in IMAGE_SUFFIXES:
+                        previous = image_uses.get(resolved_path)
+                        if previous is not None:
+                            issues.append(
+                                Issue(
+                                    "E_EVIDENCE_REUSED",
+                                    f"同一张截图被第 {previous} 行和本行重复使用：{candidate}",
+                                    number,
+                                )
+                            )
+                        else:
+                            image_uses[resolved_path] = number
                     else:
-                        evidence_paths.append(resolved_path)
+                        try:
+                            head = resolved_path.read_bytes()[:4096].decode("utf-8", "ignore").strip()
+                        except OSError:
+                            head = ""
+                        lowered = head.lower()
+                        if (
+                            not head
+                            or re.fullmatch(r"<.*>", head, re.S)
+                            or lowered in {"todo", "tbd", "待补", "待取证", "见截图", "示例"}
+                            or head.startswith("TODO")
+                        ):
+                            issues.append(
+                                Issue(
+                                    "E_FAKE_EVIDENCE",
+                                    f"{item_id or '该行'} 的证据文件只有占位内容：{candidate}",
+                                    number,
+                                )
+                            )
 
                 # 截图不是“写一句见截图”就算数：必须能解析出一张真实、
-                # 非空的图片文件。路径不存在会同时命中 E_EVIDENCE_PATH。
-                if (
-                    status in {"通过", "带欠账"}
-                    and evidence_type == "截图"
-                    and not has_readable_image(evidence, root, ledger_dir)
-                ):
+                # 非空的图片文件；这条对所有状态生效，失败/阻塞也不能用文字冒充。
+                if evidence_type == "截图" and not has_readable_image(evidence, root, ledger_dir):
                     issues.append(
                         Issue(
                             "E_SCREENSHOT",
@@ -945,9 +1835,77 @@ def check_v1_ledger(
                                 )
                             )
 
+        row_records.append(
+            {
+                "id": item_id,
+                "covers": covers,
+                "status": status,
+                "type": evidence_type,
+                "level": level,
+                "producer": producer,
+                "reviewer": reviewer,
+                "time": time_value,
+                "commit": commit,
+                "user_path": values["user_path"],
+                "paths": evidence_paths,
+                "line": number,
+            }
+        )
+
+    # 账本行必须覆盖任务卡的全部 AC；只写“AC-01”却漏掉 AC-02 不能算通过。
+    expected_acs = {ac_id for ac_id, _, _ in acs}
+    covered_acs = {ac_id for row in row_records for ac_id in row["covers"]}
+    unknown = sorted(covered_acs - expected_acs)
+    if unknown:
+        issues.append(
+            Issue("E_COVERS", "账本引用了任务卡里不存在的 AC：" + "、".join(unknown), ledger_section[1])
+        )
+    uncovered_acs = sorted(expected_acs - covered_acs)
+    if uncovered_acs:
+        issues.append(
+            Issue("E_COVERS", "任务卡 AC 没有被账本行覆盖：" + "、".join(uncovered_acs), ledger_section[1])
+        )
+
+    # 旅程步骤映射需要完整的行记录，放在行循环之后补一次。
+    journey_ok = check_journey_section(path.parent, sections, row_records, risk, issues)
+    if journey_passed != journey_ok:
+        journey_passed = journey_ok
+
+    check_evidence_identity(sections, row_records, batch_build, root, ledger_dir, issues)
+    check_completion_audit(sections, acs, batch_build, root, ledger_dir, issues)
+    check_independent_review(sections, acs, row_records, batch_values, root, ledger_dir, issues)
+    check_blocking_form(ledger_dir, row_records, issues)
+
+    # 任务卡在取证之后又被改动，说明判据变了，旧证据随之失效。
+    if card_path is not None and card_path.exists():
+        dirty, _ = git_path_dirty(root, card_path)
+        if dirty:
+            try:
+                card_date = datetime.fromtimestamp(card_path.stat().st_mtime).date()
+            except OSError:
+                card_date = None
+            if card_date is not None:
+                for row in row_records:
+                    if V1_DATE_RE.fullmatch(row["time"]):
+                        try:
+                            row_date = date.fromisoformat(row["time"])
+                        except ValueError:
+                            continue
+                        if card_date > row_date:
+                            issues.append(
+                                Issue(
+                                    "E_STALE_TASKCARD",
+                                    f"任务卡在证据日期 {row_date} 之后又改过，旧证据失效",
+                                    row["line"],
+                                )
+                            )
+                            break
+
     # 包结论必须和账本状态一致；空结论已在包结论段报过缺字段。
     if conclusion:
-        expected = expected_v1_conclusion(list(status_counts.elements()), current_policy)
+        expected = expected_v1_conclusion(
+            list(status_counts.elements()), current_policy, journey_passed
+        )
         if expected and normalize_conclusion(conclusion) != expected:
             issues.append(
                 Issue(
@@ -982,7 +1940,7 @@ def check_ledger(
 ) -> tuple[list[Issue], dict[str, int], str]:
     """执行全部检查，返回 (问题列表, 状态计数, 收口/包结论)。
 
-    forced_format：auto 按 marker 判断；legacy 强制八列；v1 强制项目十列。
+    forced_format：auto 按 marker 判断；legacy 强制八列；v1 强制项目十三列。
     policy 决定 v1 允许状态/结论/证据类型/置信度；strict 额外拒绝带欠账。
     """
     issues: list[Issue] = []
@@ -1341,7 +2299,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         "--format",
         choices=("auto", "legacy", "v1"),
         default="auto",
-        help="账本格式：auto 按 marker 判断（默认），legacy 八列，v1 项目十列",
+        help="账本格式：auto 按 marker 判断（默认），legacy 八列，v1 项目十三列",
     )
     parser.add_argument("--json", action="store_true", help="以 JSON 输出结果，便于 CI 消费")
     parser.add_argument(

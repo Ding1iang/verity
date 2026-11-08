@@ -1,0 +1,52 @@
+{
+  "schema": "verity-manifest/v1",
+  "created_at": "2026-11-08",
+  "workspace_hash": "7634fe69fd8c27f9a3507758a7e1d7d77ef6bc7c56b7f11d97c87917f2affea3",
+  "files": [
+    {
+      "path": "docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md",
+      "sha256": "57e065213a13a0c1f04377aab8ad571e3410d65944f19d080a9ff5bbd6d071e1",
+      "bytes": 5450,
+      "tracked": true,
+      "source_command": "python3 scripts/check_evidence.py docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md"
+    },
+    {
+      "path": "docs/reviews/2026-11-08-self-acceptance/README.md",
+      "sha256": "74b114024286ab4c57acece0fb25ff170537964aebd8df6b80f74b04d34aea0a",
+      "bytes": 1503,
+      "tracked": true,
+      "source_command": "批次骨架/记录文件"
+    },
+    {
+      "path": "docs/reviews/2026-11-08-self-acceptance/blocking-form.md",
+      "sha256": "919a1c5a105ef1f196e6a814c08cd924c87941faa9c05cd3464b510790625280",
+      "bytes": 869,
+      "tracked": true,
+      "source_command": "批次骨架/记录文件"
+    },
+    {
+      "path": "docs/reviews/2026-11-08-self-acceptance/evidence/04-verification.log",
+      "sha256": "2c0b27a5ae6baa28dcf98bd8459630bba1234ae2ebf86e48396707705003e2f1",
+      "bytes": 9366,
+      "tracked": false,
+      "source_command": "见 07 账本对应证据行的取证方式"
+    },
+    {
+      "path": "docs/reviews/2026-11-08-self-acceptance/journey-01.md",
+      "sha256": "3eccfb2b069a9da3521838b4ac16ca882e0f15388083b6327db57a0f00392e59",
+      "bytes": 2597,
+      "tracked": true,
+      "source_command": "批次骨架/记录文件"
+    },
+    {
+      "path": "docs/reviews/2026-11-08-self-acceptance/task-card.md",
+      "sha256": "5f23531b06f1feee26dc7808d0e5728f8299ace903e3b925f3521e352f6dce91",
+      "bytes": 5642,
+      "tracked": true,
+      "source_command": "批次骨架/记录文件"
+    }
+  ],
+  "source_commands": [
+    "python3 scripts/check_evidence.py docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md"
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "schema": "verity-manifest/v1",
+  "created_at": "2026-11-08",
+  "workspace_hash": "81bdebd2310e08f15ef63ea0fc62b06fe53d319fcd7ccfa9641927f8ba93c7f9",
+  "files": [
+    {
+      "path": "examples/04-project-v1/07-验收回归清单.md",
+      "sha256": "32d5604018bdbb32e63541d1c97720a6930bdecd583f6012db92ef498e3ebc71",
+      "bytes": 2990,
+      "tracked": true,
+      "source_command": "python3 scripts/check_evidence.py examples/04-project-v1/07-验收回归清单.md"
+    },
+    {
+      "path": "examples/04-project-v1/README.md",
+      "sha256": "75c213d862dfe343a08ad16574f58263b7ebd2fb0bdcd9bedf4afedf639cad58",
+      "bytes": 2834,
+      "tracked": true,
+      "source_command": "批次骨架/记录文件"
+    },
+    {
+      "path": "examples/04-project-v1/bad-fake-screenshot/07-验收回归清单.md",
+      "sha256": "310dbf5d1858870e600b959601cb136bd4fb98a557b13794d9b27ffe3758eea9",
+      "bytes": 2242,
+      "tracked": true,
+      "source_command": "批次骨架/记录文件"
+    },
+    {
+      "path": "examples/04-project-v1/journey-01.md",
+      "sha256": "5059054888da6a6c1318afb3a9153e4e5a165e535dedae04c38fc028f792e5bf",
+      "bytes": 1676,
+      "tracked": false,
+      "source_command": "批次骨架/记录文件"
+    },
+    {
+      "path": "examples/04-project-v1/task-card.md",
+      "sha256": "fad0cc957840d080bf817c576b415c30172a9ef0cbe70e923a07c5af5e118dd9",
+      "bytes": 1491,
+      "tracked": true,
+      "source_command": "批次骨架/记录文件"
+    }
+  ],
+  "source_commands": [
+    "python3 scripts/check_evidence.py examples/04-project-v1/07-验收回归清单.md"
+  ]
+}

@@ -1,5 +1,7 @@
 # 干净目录复跑记录
 
+> 历史记录：以下命令读数属于 v1.0.0 时点，不代表当前 1.3.0；当前计数以 README、CHANGELOG 和 `docs/optimization-matrix.md` 为准。
+
 > 本文件先记录本机临时目录的复跑，再记录 2026-11-07 从私有 GitHub 仓库的干净克隆复跑。两者是独立证据，不能互相替代。
 
 ## 范围与环境
@@ -58,4 +60,4 @@ python3 scripts/anti_examples.py
 - 克隆结果：HEAD `822c65b`，`git status` 空；remote 为 `ssh://git@ssh.github.com:443/Ding1iang/verity.git`。
 - 复跑结果：`selftest.py` 5/5；`check_coverage.py --selftest` 8/8；`tests/init-selftest.sh` 4/4；`anti_examples.py` 10/10；五个示例账本 3/4/2通过+1阻塞+1不适用/1/5；`package.py --check` 57/60、360.1KB；`package.py --zip` 57 entries、154.2KB，无 `.git/`、`__pycache__`、`.pyc`、`.DS_Store`、`dist/`。
 - 首次 HTTPS 克隆两次失败（`Error in the HTTP2 framing layer`、`Empty reply from server`），改用 SSH over 443 成功；失败命令与错误保留在此，作为通道限制记录。
-- 结论：私有仓库干净克隆可复跑，不依赖本机工作区；该结论与 `notes-hap/docs/测试/2026-11-06-全量/verity-干净克隆记录.md` 一致。
+- 结论：私有仓库干净克隆可复跑，不依赖本机工作区；该结论与 `业务项目/docs/测试/2026-11-06-全量/干净克隆记录.md` 一致。

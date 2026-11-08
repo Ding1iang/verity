@@ -1,7 +1,7 @@
 ---
 name: verity
-version: 1.2.0
-description: 当 AI 准备说完成时，用任务卡、证据分级、用户旅程、v1 四状态与三包结论验证；不能证明就标未交付或阻塞
+version: 1.3.0
+description: 当 AI 准备说完成时，用任务卡、证据分级、用户旅程、v1 schema 2 十三列与三包结论验证；不能证明就标未交付或阻塞
 ---
 
 # verity：交付验收
@@ -43,11 +43,11 @@ description: 当 AI 准备说完成时，用任务卡、证据分级、用户旅
 
 ## 五步流程
 
-1. **立卡**：按 `templates/task-card.md` 写任务卡，先写 1–3 张用户旅程卡（`templates/journey-card.md`）。目标一句话，范围写清做与不做，每条验收项带判据和最低证据等级；没有判据的项不许开工。开工前先看工作区状态，保留已有改动；只改任务卡范围，不覆盖或回滚不属于本次的改动。
-2. **取证**：按判据和旅程卡实际执行，记录命令或操作路径、读数、时间、被测版本。每次动作后先看整窗，再断言跨区域不变量（当前页/标题/列表选中/计数/DB 是否互相对得上）；不能只截当前检查项。动手前先想清楚“什么结果会推翻这条结论”。操作与观察方法见 `references/acceptance-run.md`；用户旅程见 `references/journey-acceptance.md`；视觉和行为/性能专项分别见 `references/visual.md`、`references/behavior-perf.md`。
-3. **判级**：按 `references/evidence.md` 给每条证据定 A/B/C，对照该项最低等级；证据覆盖范围小于结论范围的，一律降级或改小结论。
-4. **攻防**：关键项换一个独立通道复核，用坏样本证明检查会报红；出现反证就当场改判，不保留“整体还行”。每批再留 5 分钟不按清单的真实使用，把新发现转成缺陷或不变量。
-5. **落账**：一项一行写进 `07-验收回归清单.md`（模板 `templates/07-acceptance.md`），旅程结论写进旅程卡并在 07 的“用户路径”列引用旅程 ID；收口前先做完成审计，把完成定义逐条对应到最终构建、实际读数和证据路径；按 `references/acceptance.md` 的模板规则收口，清理本次临时产物。
+1. **立卡**：按 `templates/task-card.md` 写任务卡，先写 1–3 张用户旅程卡（`templates/journey-card.md`）。先判车道与风险：跨模块、不可逆、数据、安全、发布任一硬触发就进全流程；全流程必须留至少三条立卡前盘问和一页规格摘要。目标一句话，范围写清做与不做并落成范围锁；每条验收项带可判判据和最低证据等级；没有判据的项不许开工。开工前先看工作区状态，保留已有改动；只改任务卡范围，不覆盖或回滚不属于本次的改动。
+2. **取证**：按判据和旅程卡实际执行，记录命令或操作路径、读数、时间、被测版本；每条证据在“证据身份”登记文件、SHA-256、字节数、构建号、环境、取证时间和 workspace_hash，截图补 viewport 与 pixel_hash，性能补 runs 与 median，数据补 before/after。每次动作后先看整窗，再断言跨区域不变量（当前页/标题/列表选中/计数/DB 是否互相对得上）；不能只截当前检查项。动手前先想清楚“什么结果会推翻这条结论”。操作与观察方法见 `references/acceptance-run.md`；用户旅程见 `references/journey-acceptance.md`；视觉和行为/性能专项分别见 `references/visual.md`、`references/behavior-perf.md`。
+3. **判级**：按 `references/evidence.md` 给每条证据定 A/B+/B/C，对照该项最低等级；证据覆盖范围小于结论范围的，一律降级或改小结论。
+4. **攻防**：独立复核人必须与执行者不同；复核表逐 AC 写 supports / does-not-support / unclear，并至少复跑一条 A 级命令。用坏样本证明检查会报红（`anti_examples.py`）；出现反证就当场改判。每批再留 5 分钟不按清单的真实使用，把新发现转成缺陷或不变量。
+5. **落账**：一项一行写进 `07-验收回归清单.md`（模板 `templates/07-acceptance.md`），每行用“覆盖 AC”列映射任务卡、用“用户路径”列引用旅程步骤；收口前先做完成审计，把完成定义逐条对应到最终构建、实际读数和证据路径；再写独立复核、复盘与证据包清单。按 `references/acceptance.md` 的模板规则收口，清理本次临时产物。
 
 ## 输出格式
 
@@ -67,13 +67,26 @@ description: 当 AI 准备说完成时，用任务卡、证据分级、用户旅
 - 每个数字都要能在账本里找到对应行；账本之外不出现第二套口径。
 - 阻塞必须附按 `templates/blocking-form.md` 填好的举证单；填不出就写“未通过”。
 
-## 三条硬规则
+## 四条硬规则
 
 1. **先定靶，后动手**：没有任务卡不开工；任务卡一改，针对旧判据取的全部证据立即作废。
 2. **结论只能比证据小**：每条结论必须指回一条账本证据；判通过必须达到该项最低证据等级；C 级只能提出假设，永远不能判通过。
 3. **按模板收口，单一账本**：v1 默认模板只写通过 / 未交付（失败）/ 未交付（阻塞）；检查器默认拒绝“带欠账/带欠账交付”，读取历史账本时用 `--compat-debt` 显式放行；`--strict` 仍可叠加卡口。旧八列只写通过 / 未通过 / 阻塞。禁止“通过（含残余）”“基本可用”；不能证明就判阻塞（附举证单）或失败；07 是唯一状态源，其他文档只引用、不复制。
 4. **完整修复，不留可补的缺口**：目标是修根因、覆盖受影响路径，不是把 diff 压到最小；能现在补的验证、补证、修复，不留给下一轮。`未覆盖` / `带欠账` 不是默认终态，只有用户明确接受才可带欠账。
 
+## 本地门禁与自检
+
+所有命令在 verity 仓库根执行，也可在项目根用 `--root` 指向项目：
+
+```bash
+python3 scripts/verity.py doctor --root .                  # 版本、git、适配层、取证通道正负对照
+python3 scripts/verity.py gate --root . --ledger <07>      # 完成线闸门：账本 + 覆盖 + 清单 + 范围锁 + 防绕过
+python3 scripts/verity.py manifest --root . --ledger <07> --write   # 生成证据包 manifest.json
+python3 scripts/verity.py report --ledger <07> --kind two-layer   # 两层汇报：先人话，后证据
+```
+
+`gate` 退出码非 0 就不得 commit、push 或发布。团队仓库或高风险批次加 `--team`，保护规则从 base 分支的 `.verity/policy.json` 读取，禁止删除断言、skip/focus 和 `--no-verify`。发布前跑 `python3 scripts/verity.py scan --release` 做脱敏扫描。
+
 ## 版本与包结构
 
-当前版本：1.2.0。入口是本文件；规则正文在 `references/`，可复制模板在 `templates/`，端到端示例在 `examples/`，检查与打包脚本在 `scripts/`，初始化自测在 `tests/`，复核记录在 `docs/reviews/`。四种模式的索引见上方“四种模式怎么选”表，用户旅程规则见 `references/journey-acceptance.md`。
+当前版本：1.3.0。入口是本文件；规则正文在 `references/`，可复制模板在 `templates/`，端到端示例在 `examples/`，检查与打包脚本在 `scripts/`，初始化自测在 `tests/`，复核记录在 `docs/reviews/`。四种模式的索引见上方“四种模式怎么选”表，用户旅程规则见 `references/journey-acceptance.md`。

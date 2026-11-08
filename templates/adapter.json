@@ -41,10 +41,13 @@
     "ledger_root": "<07 账本根目录，相对项目根>",
     "evidence_root": "<证据文件根目录，相对项目根>",
     "coverage_master": "<覆盖总表路径，相对项目根>",
+    "ledger_filename": "07-验收回归清单.md",
+    "task_card_filename": "task-card.md",
+    "_package_filename_comment": "可选：项目若不用 verity 默认的账本/任务卡文件名，在这里声明；只影响批次包互链检查，不改变 07-*.md 的命名规则。",
     "ledger_template": "",
     "task_card_template": "",
     "blocking_form_template": "",
-    "_ledger_template_comment": "可选：项目自己的 07 账本模板，相对项目根。填了它，init 会按项目模板生成；留空则使用 verity 仓库的 v1 十列模板。模板文件必须存在，内容里的 marker 决定 check_evidence.py 的格式。"
+    "_ledger_template_comment": "可选：项目自己的 07 账本模板，相对项目根。填了它，init 会按项目模板生成；留空则使用 verity 仓库的 v1 schema 2 十三列模板。模板文件必须存在，内容里的 marker 决定 check_evidence.py 的格式。"
   },
   "ledger": {
     "statuses": ["通过", "未交付-失败", "未交付-阻塞", "未覆盖"],
@@ -66,7 +69,7 @@
       }
     ],
     "forbidden": [
-      "密码",
+      "生产密码/真实凭据",
       "令牌",
       "Cookie",
       "私钥",

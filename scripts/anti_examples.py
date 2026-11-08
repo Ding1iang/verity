@@ -14,6 +14,9 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -37,7 +40,7 @@ def row(
     producer: str = "反例生成器",
     confidence: str = "高",
 ) -> dict[str, str]:
-    """返回一行十列账本数据；所有反例共用，差异只放在关键列。"""
+    """返回一行旧版十列账本数据；所有反例共用，差异只放在关键列。"""
     return {
         "id": item_id,
         "user_path": "运行反例命令",
@@ -159,6 +162,122 @@ def run_checker(ledger: Path, root: Path) -> tuple[int, str]:
     return process.returncode, process.stdout + process.stderr
 
 
+V2_BASE = REPO_ROOT / "examples" / "05-release"
+
+
+def v2_case(root: Path, name: str, mutate=None, extra: dict[str, str] | None = None) -> Path:
+    """以合规的 v2 批次为底，只改一处，确保反例失败是因为目标规则而不是缺段。"""
+    case_dir = root / name
+    case_dir.mkdir(parents=True, exist_ok=True)
+    for filename in ("task-card.md", "journey-01.md", "README.md"):
+        shutil.copyfile(V2_BASE / filename, case_dir / filename)
+    text = (V2_BASE / "07-验收回归清单.md").read_text(encoding="utf-8")
+    if mutate is not None:
+        text = mutate(text)
+    ledger = case_dir / "07-验收回归清单.md"
+    ledger.write_text(text, encoding="utf-8")
+    for filename, content in (extra or {}).items():
+        (case_dir / filename).write_text(content, encoding="utf-8")
+    return ledger
+
+
+def drop_section(text: str, title: str) -> str:
+    """删除一个二级段，用来验证“必需段缺失必须失败”。"""
+    return re.sub(rf"## {re.escape(title)}\n.*?(?=\n## )", "", text, count=1, flags=re.S)
+
+
+def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
+    """十个 v2 负向夹具：每条只违反一项新规则。"""
+    cases: list[tuple[str, Path, str]] = []
+
+    cases.append(("v2-no-journey", v2_case(root, "v2-no-journey", lambda text: drop_section(text, "用户旅程")), "E_STRUCTURE"))
+
+    def journey_not_passed(text: str) -> str:
+        text = text.replace("- 结论：通过\n- 未解决的不变量：无", "- 结论：未通过\n- 未解决的不变量：无", 1)
+        return text.replace("- 旅程结论：通过", "- 旅程结论：未通过", 1)
+
+    journey_ledger = v2_case(root, "v2-journey-not-passed", journey_not_passed)
+    (journey_ledger.parent / "journey-01.md").write_text(
+        (journey_ledger.parent / "journey-01.md").read_text(encoding="utf-8").replace("- 结论：通过", "- 结论：未通过", 1),
+        encoding="utf-8",
+    )
+    cases.append(("v2-journey-not-passed", journey_ledger, "E_JOURNEY_NOT_PASSED"))
+
+    cases.append(("v2-no-completion-audit", v2_case(root, "v2-no-completion-audit", lambda text: drop_section(text, "完成审计")), "E_STRUCTURE"))
+
+    cases.append(("v2-ac-unmapped", v2_case(root, "v2-ac-unmapped", lambda text: text.replace("| REL-01 | AC-01 |", "| REL-01 | AC-99 |", 1)), "E_COVERS"))
+
+    def same_reviewer(text: str) -> str:
+        return text.replace("示例复核者（独立）", "示例执行者")
+
+    cases.append(("v2-producer-equals-reviewer", v2_case(root, "v2-producer-equals-reviewer", same_reviewer), "E_REVIEW_INDEPENDENT"))
+
+    empty_form = """# 阻塞举证单：反例 / REL-05
+
+## 1. 卡点
+
+| 字段 | 内容 |
+|---|---|
+| 卡点 |  |
+| 现象 |  |
+
+## 2. 能力探测
+
+| 探测项 | 命令或步骤 | 实际读数 | 结论 |
+|---|---|---|---|
+|  |  |  |  |
+
+## 3. 正对照
+
+| 对照位置 | 操作 | 结果 | 说明 |
+|---|---|---|---|
+|  |  |  |  |
+
+## 4. 四维尝试
+
+| 维度 | 试过什么 | 实际结果 | 是否排除 |
+|---|---|---|---|
+| 环境 |  |  | 否 |
+
+## 5. 替代证据
+
+| 替代通道 | 能证明什么 | 不能证明什么 | 证据 |
+|---|---|---|---|
+|  |  |  |  |
+
+## 6. 为什么不是失败
+
+## 7. 解锁条件
+
+- 需要谁提供什么：
+"""
+
+    def blocked(text: str) -> str:
+        text = text.replace("| REL-05 | AC-05 | J-01 / 步骤 5 | 主路径和错误路径各一次，结果已记录 | 日志 | README.md | A | 示例执行者 | 示例复核者（独立） | 高 | 2026-11-08 | 工作区 | 通过 |", "| REL-05 | AC-05 | J-01 / 步骤 5 | 主路径和错误路径各一次，结果已记录 | 日志 | README.md | A | 示例执行者 | 示例复核者（独立） | 高 | 2026-11-08 | 工作区 | 未交付-阻塞 |", 1)
+        return text.replace("- 交付结论：通过", "- 交付结论：未交付（阻塞）", 1)
+
+    cases.append(("v2-empty-blocking-form", v2_case(root, "v2-empty-blocking-form", blocked, {"blocking-form.md": empty_form}), "E_BLOCKING_FORM"))
+
+    def duplicate_screenshot(text: str, *, sha: str, size: int) -> str:
+        text = text.replace("| REL-04 | AC-04 | J-01 / 步骤 4 | 上一可用版本、恢复步骤和恢复后冒烟检查齐全 | 日志 | README.md |", "| REL-04 | AC-04 | J-01 / 步骤 4 | 上一可用版本、恢复步骤和恢复后冒烟检查齐全 | 截图 | shot.png |", 1)
+        text = text.replace("| REL-05 | AC-05 | J-01 / 步骤 5 | 主路径和错误路径各一次，结果已记录 | 日志 | README.md |", "| REL-05 | AC-05 | J-01 / 步骤 5 | 主路径和错误路径各一次，结果已记录 | 截图 | shot.png |", 1)
+        identity = f"| shot.png | {sha} | {size} | example-05-build | 示例项目 / 单机 / Python 3.9+ | 2026-11-08 | 83df5b9c8f2ee3816149f37918b108d7991f0f571efd1d9495adf6cbcc5cbae6 | viewport=390x844；pixel_hash={'a' * 64} |\n"
+        return text.replace("| README.md | 2df74429", identity + "| README.md | 2df74429", 1)
+
+    shot = root / "v2-duplicate-screenshot" / "shot.png"
+    shot.parent.mkdir(parents=True, exist_ok=True)
+    shot.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)
+    sha = hashlib.sha256(shot.read_bytes()).hexdigest()
+    screenshot_ledger = v2_case(root, "v2-duplicate-screenshot", lambda text: duplicate_screenshot(text, sha=sha, size=shot.stat().st_size))
+    (screenshot_ledger.parent / "shot.png").write_bytes(shot.read_bytes())
+    cases.append(("v2-duplicate-screenshot", screenshot_ledger, "E_EVIDENCE_REUSED"))
+
+    cases.append(("v2-old-build", v2_case(root, "v2-old-build", lambda text: text.replace("| example-05-build | 示例项目", "| example-04-build | 示例项目", 1)), "E_ARTIFACT_BUILD"))
+    cases.append(("v2-missing-evidence-path", v2_case(root, "v2-missing-evidence-path", lambda text: text.replace("| REL-03 | AC-03 | J-01 / 步骤 3 | 干净检出构建成功，产物 SHA-256 已记录 | 日志 | README.md |", "| REL-03 | AC-03 | J-01 / 步骤 3 | 干净检出构建成功，产物 SHA-256 已记录 | 日志 | evidence/missing.log |", 1)), "E_EVIDENCE_PATH"))
+    cases.append(("v2-fake-evidence", v2_case(root, "v2-fake-evidence", lambda text: text.replace("| REL-03 | AC-03 | J-01 / 步骤 3 | 干净检出构建成功，产物 SHA-256 已记录 | 日志 | README.md |", "| REL-03 | AC-03 | J-01 / 步骤 3 | 干净检出构建成功，产物 SHA-256 已记录 | 日志 | todo.log |", 1), {"todo.log": "TODO\n"}), "E_FAKE_EVIDENCE"))
+    return cases
+
+
 def main() -> int:
     total = 0
     passed = 0
@@ -211,7 +330,8 @@ def main() -> int:
         # 11. 新账本默认禁止带欠账：没有 --compat-debt 时，带欠账必须报错。
         cases.append(("debt-not-allowed", write_case(root, "debt-not-allowed", [row("CASE-11", status="带欠账")], conclusion="带欠账交付"), "E_STATUS"))
 
-        for name, ledger, expected in cases:
+        all_cases = cases + run_v2_cases(root)
+        for name, ledger, expected in all_cases:
             total += 1
             code, output = run_checker(ledger, old_root if name == "stale-evidence" else root)
             if code != 0 and expected in output:

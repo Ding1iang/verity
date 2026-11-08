@@ -59,6 +59,8 @@ DISPLAY_COLUMNS = {
 }
 EMPTY_VALUES = {"", "—", "-", "–", "无", "n/a", "na", "待填", "tbd", "todo", "/"}
 LEDGER_NAME_RE = re.compile(r"^07[-_].+\.md$", re.IGNORECASE)
+DEFAULT_LEDGER_FILENAME = "07-验收回归清单.md"
+DEFAULT_TASK_CARD_FILENAME = "task-card.md"
 PLACEHOLDER_RE = re.compile(r"^<[^<>]*>$")
 
 
@@ -283,6 +285,24 @@ def is_ledger_name(path: Path) -> bool:
     return bool(LEDGER_NAME_RE.fullmatch(path.name))
 
 
+def resolve_package_filenames(adapter_data: Optional[dict]) -> tuple[str, str]:
+    """读取适配层里的账本/任务卡文件名，缺省用 verity 约定名。
+
+    这两个名字只影响“批次包互链检查”，不改变 07-*.md 的命名规则；
+    项目已经使用别的文件名时，在适配层 paths 里声明即可，不必改脚本。
+    """
+    paths = adapter_data.get("paths") if isinstance(adapter_data, dict) else None
+    if not isinstance(paths, dict):
+        return DEFAULT_LEDGER_FILENAME, DEFAULT_TASK_CARD_FILENAME
+    ledger = paths.get("ledger_filename")
+    task_card = paths.get("task_card_filename")
+    if not isinstance(ledger, str) or not ledger.strip():
+        ledger = DEFAULT_LEDGER_FILENAME
+    if not isinstance(task_card, str) or not task_card.strip():
+        task_card = DEFAULT_TASK_CARD_FILENAME
+    return ledger.strip(), task_card.strip()
+
+
 def find_git_root(start: Path) -> Optional[Path]:
     """从 start 向上找第一个含 .git 的目录。"""
     for parent in (start, *start.parents):
@@ -454,6 +474,7 @@ def check_coverage(
     issues: list[Issue] = []
     status_counts: Counter[str] = Counter()
     conclusion_counts: Counter[str] = Counter()
+    ledger_filename, task_card_filename = resolve_package_filenames(adapter_data)
 
     try:
         text = coverage_path.read_text(encoding="utf-8")
@@ -652,10 +673,10 @@ def check_coverage(
                                         number,
                                     )
                                 )
-                            task_card = batch_dir / "task-card.md"
+                            task_card = batch_dir / task_card_filename
                             if not task_card.is_file():
                                 issues.append(
-                                    Issue("E_TASK_CARD_MISSING", f"批次目录缺少 task-card.md：{batch_dir}", number)
+                                    Issue("E_TASK_CARD_MISSING", f"批次目录缺少 {task_card_filename}：{batch_dir}", number)
                                 )
                             else:
                                 try:
@@ -667,7 +688,7 @@ def check_coverage(
                                     issues.append(
                                         Issue(
                                             "E_INTERLINK",
-                                            f"task-card.md 没有引用模块“{module_id or module_name}”",
+                                            f"{task_card_filename} 没有引用模块“{module_id or module_name}”",
                                             number,
                                         )
                                     )
@@ -675,18 +696,26 @@ def check_coverage(
                                     issues.append(
                                         Issue(
                                             "E_INTERLINK",
-                                            f"task-card.md 没有引用批次目录名“{batch_dir.name}”",
+                                            f"{task_card_filename} 没有引用批次目录名“{batch_dir.name}”",
                                             number,
                                         )
                                     )
-                                if "07-验收回归清单.md" not in task_text:
+                                if ledger_filename not in task_text:
                                     issues.append(
                                         Issue(
                                             "E_INTERLINK",
-                                            "task-card.md 没有链接 07-验收回归清单.md",
+                                            f"{task_card_filename} 没有链接 {ledger_filename}",
                                             number,
                                         )
                                     )
+                            if not list(batch_dir.glob("journey-*.md")):
+                                issues.append(
+                                    Issue(
+                                        "E_JOURNEY_CARD_MISSING",
+                                        f"批次目录缺少 journey-*.md 旅程卡：{batch_dir}",
+                                        number,
+                                    )
+                                )
                             if not (batch_dir / "blocking-form.md").is_file():
                                 issues.append(
                                     Issue(
@@ -708,9 +737,9 @@ def check_coverage(
                                 ledger_text = ledger_path.read_text(encoding="utf-8")
                             except (OSError, UnicodeDecodeError):
                                 ledger_text = ""
-                            if "task-card.md" not in ledger_text:
+                            if task_card_filename not in ledger_text:
                                 issues.append(
-                                    Issue("E_INTERLINK", "07 没有链接 task-card.md", number)
+                                    Issue("E_INTERLINK", f"07 没有链接 {task_card_filename}", number)
                                 )
                             module_refs = [item for item in (module_id, module_name) if item]
                             if module_refs and not any(item in ledger_text for item in module_refs):
@@ -1036,6 +1065,7 @@ class SelftestCase:
     expected_codes: tuple[str, ...] = ()
     add_orphan: bool = False
     remove_task_card: bool = False
+    remove_journey: bool = False
 
     @property
     def should_pass(self) -> bool:
@@ -1075,6 +1105,10 @@ def build_selftest_project(root: Path, case: SelftestCase) -> Path:
             "[07-验收回归清单.md](07-验收回归清单.md)\n",
             encoding="utf-8",
         )
+        (batch_dir / "journey-01.md").write_text(
+            f"# 用户旅程卡：J-01 {module_name}\n\n## 结论\n\n- 结论：未覆盖\n",
+            encoding="utf-8",
+        )
         (batch_dir / "blocking-form.md").write_text("# 阻塞举证\n\n不适用。\n", encoding="utf-8")
         (batch_dir / "evidence").mkdir(exist_ok=True)
         if row[7] == "已覆盖" and row[6].startswith("batches/"):
@@ -1097,6 +1131,9 @@ def build_selftest_project(root: Path, case: SelftestCase) -> Path:
 
     if case.remove_task_card:
         (project / "batches" / "B01" / "task-card.md").unlink(missing_ok=True)
+    if case.remove_journey:
+        for journey in (project / "batches" / "B01").glob("journey-*.md"):
+            journey.unlink(missing_ok=True)
     if case.add_orphan:
         (project / "batches" / "07-orphan.md").write_text(
             "# 07 验收回归清单：未登记\n", encoding="utf-8"
@@ -1154,6 +1191,13 @@ def run_selftest() -> int:
             expected_codes=("E_TASK_CARD_MISSING",),
             remove_task_card=True,
         ),
+        SelftestCase(
+            "bad-no-journey",
+            "坏样本·缺旅程卡",
+            lambda rows, project: None,
+            expected_codes=("E_JOURNEY_CARD_MISSING",),
+            remove_journey=True,
+        ),
     ]
 
     print("verity 覆盖总表自测")
@@ -1183,7 +1227,7 @@ def run_selftest() -> int:
 
             if case.should_pass:
                 ok = process.returncode == 0 and "[OK]" in process.stdout
-                detail = f"退出 {process.returncode}，{'未给出通过摘要' if not ok else '8 行全部通过'}"
+                detail = f"退出 {process.returncode}，{'未给出通过摘要' if not ok else '9 行全部通过'}"
             else:
                 hit = all(code in output for code in case.expected_codes)
                 ok = process.returncode != 0 and hit

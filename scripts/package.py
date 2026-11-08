@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """verity 技能包打包检查与 zip 生成。
 
-规则：文件数超过 60 或总大小超过 10 MB 时直接报错，不生成 zip。
+规则：文件数超过 70 或总大小超过 10 MB 时直接报错，不生成 zip。
 上限按自用开源仓库的口径设置，覆盖技能内容与 GitHub 协作文件。
 
 优先用 `git ls-files` 取“已跟踪 + 未忽略”的文件，保证 .gitignore 里
@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import os
 import subprocess
 import sys
@@ -22,7 +23,7 @@ import zipfile
 from pathlib import Path
 from typing import Optional
 
-DEFAULT_MAX_FILES = 60
+DEFAULT_MAX_FILES = 70
 DEFAULT_MAX_BYTES = 10 * 1024 * 1024
 
 # 无 git 时的目录排除表；与 .gitignore 的意图保持一致。
@@ -48,6 +49,8 @@ EXCLUDED_DIRS = {
 EXCLUDED_NAMES = {".DS_Store"}
 EXCLUDED_SUFFIXES = {".pyc", ".pyo", ".zip"}
 EXCLUDED_PATTERNS = ("*.local.*", "*.secret", "*.pem", "*.key")
+# 分析记录不是技能交付物：它引用外部仓库、体量大且会随调研变化，不进技能包。
+EXCLUDED_RELATIVE_PATTERNS = ("docs/2026-*外部工作流对比与优化清单.md",)
 
 
 def human_size(size: int) -> str:
@@ -129,6 +132,15 @@ def collect_files(root: Path, output: Path) -> tuple[list[Path], str]:
         resolved = path.resolve()
         if resolved == output_resolved:
             continue
+        try:
+            relative = resolved.relative_to(root.resolve()).as_posix()
+        except ValueError:
+            relative = resolved.name
+        if any(
+            fnmatch.fnmatch(relative, pattern)
+            for pattern in EXCLUDED_RELATIVE_PATTERNS
+        ):
+            continue
         unique[resolved.as_posix()] = path
     return [unique[key] for key in sorted(unique)], source
 
@@ -159,7 +171,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--root", default=".", help="要打包的仓库根目录，默认当前目录")
     parser.add_argument("--output", help="zip 输出路径，默认 <root>/dist/verity.zip")
     parser.add_argument("--prefix", default="verity", help="zip 内的根目录名；传空字符串表示不套目录")
-    parser.add_argument("--max-files", type=int, default=DEFAULT_MAX_FILES, help="文件数上限，默认 60")
+    parser.add_argument("--max-files", type=int, default=DEFAULT_MAX_FILES, help="文件数上限，默认 70")
     parser.add_argument(
         "--max-bytes",
         type=int,

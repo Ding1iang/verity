@@ -1,9 +1,11 @@
 # 08 独立复核报告（T5）
 
+> 历史记录：以下命令读数属于 v1.0.0 时点，不代表当前 1.3.0；当前计数以 README、CHANGELOG 和 `docs/optimization-matrix.md` 为准。
+
 - 复核对象：2026-11-06 全量 8 批、两个 T4 真实任务试点、verity v1.0.0
 - 复核人：reviewer（独立于实现，只读复核）
 - 复核日期：2026-11-07
-- 复核方式：逐份读 07 与证据；重跑 `check_evidence --strict`、`check_coverage`、`check-workflow-consistency`、`check-coverage-matrix`；复算 HAP SHA-256；核对临时 worktree 的 HEAD/status；从私有仓库重新克隆 v1.0.0 并复跑 selftest/package/anti_examples；核对 GitHub API 的仓库、Release 与 CI 状态。
+- 复核方式：逐份读 07 与证据；重跑 `check_evidence --strict`、`check_coverage`、`check-workflow-consistency`、`check-coverage-matrix`；复算 产物 SHA-256；核对临时 worktree 的 HEAD/status；从私有仓库重新克隆 v1.0.0 并复跑 selftest/package/anti_examples；核对 GitHub API 的仓库、Release 与 CI 状态。
 
 > T5d 复审更新（2026-11-07）：见第九节；最新交付结论为 **通过**；T5c“未交付（失败）”、T5b“未交付（阻塞）”与 T5“未交付（失败）”均保留为历史判定。
 
@@ -20,7 +22,7 @@
 | 批次 | 07 结论 | 独立复核 | 关键依据 |
 |---|---|---|---|
 | 加密回收站 | 通过 7/7 | 通过 | 3aad84de；加密后 DB 无明文，错密码提示正确，回收站恢复仍加密，彻底删除无残留；证据类型与路径匹配 |
-| 启动与数据 | 通过 5/5 | 通过 | 706a1d6f；HAP 7e32cc8b…（9,492,557B，仓库内实算一致）；测试从 23:33:49 开始，晚于 commit 23:25:37；T0 已改 3aad84de |
+| 启动与数据 | 通过 5/5 | 通过 | 706a1d6f；产物 7e32cc8b…（9,492,557B，仓库内实算一致）；测试从 23:33:49 开始，晚于 commit 23:25:37；T0 已改 3aad84de |
 | 搜索收藏标签 | 通过 5/5 | 通过 | 3aad84de；搜索、收藏、标签入口与 DB 读数一致 |
 | 日历待办 | 通过 6/6 | 通过 | 3aad84de；待办新建/勾选/删除、日期与 DB 一致 |
 | 树导航 | 通过 7/7 | 通过 | 3aad84de；移动/删除/恢复、展开/多选均有补充 DB 读数；性能三次 176/251/247ms，中位 247ms ≤500ms |
@@ -41,10 +43,10 @@
 
 | 试点 | 07 结论 | 独立复核 | 关键依据 |
 |---|---|---|---|
-| 关于页复制版本号 | 4/4 通过 | 通过 | 基线 3aad84de；功能 706a1d6f；干净 worktree HAP `334e4c2d…`（9,492,560B）；构建日志 17s739；干净证据 00:19；metrics 记录用户介入 0、captain 1、主动阻塞 0 |
-| 编辑保存提示修复 | 4/4 通过 | 通过 | 基线 3aad84de；修复 f7cd4f76；干净 worktree HAP `464160d0…`（9,487,351B）；AC-03/04 使用 clean-f7cd 证据；metrics 记录用户 0、captain 2、主动阻塞 0 |
+| 关于页复制版本号 | 4/4 通过 | 通过 | 基线 3aad84de；功能 706a1d6f；干净 worktree 产物 `334e4c2d…`（9,492,560B）；构建日志 17s739；干净证据 00:19；metrics 记录用户介入 0、captain 1、主动阻塞 0 |
+| 编辑保存提示修复 | 4/4 通过 | 通过 | 基线 3aad84de；修复 f7cd4f76；干净 worktree 产物 `464160d0…`（9,487,351B）；AC-03/04 使用 clean-f7cd 证据；metrics 记录用户 0、captain 2、主动阻塞 0 |
 
-两份 07 均 10 列、4 行全通过，证据路径存在，`check_evidence.py --strict` 与项目 `check-acceptance-evidence.mjs` 均通过。两个 HAP 均从现存临时 worktree 实算哈希，与 07 一致；worktree 的 `git status` 为空、HEAD 分别为 706a1d6f / f7cd4f76。T4 原先的 P1（关于页截图早于构建、编辑页 HAP 混入另一试点改动）已用干净重建闭合。
+两份 07 均 10 列、4 行全通过，证据路径存在，`check_evidence.py --strict` 与项目 `项目检查器` 均通过。两个 产物 均从现存临时 worktree 实算哈希，与 07 一致；worktree 的 `git status` 为空、HEAD 分别为 706a1d6f / f7cd4f76。T4 原先的 P1（关于页截图早于构建、编辑页 产物 混入另一试点改动）已用干净重建闭合。
 
 T4 的过程记录仍有缺口：两份 `metrics.md` 都没有“新 Agent 无聊天历史”的可核记录；task-card 执行者是既有 pilot-feature / pilot-bugfix，profile 只有通用 team persona。用户介入 0、captain 1/2、主动阻塞 0 有记录，但“新 Agent”这一条件只能算部分证明。
 
@@ -54,18 +56,18 @@ T4 的过程记录仍有缺口：两份 `metrics.md` 都没有“新 Agent 无�
 |---|---|---|---|---|---|---|
 | P1-1 | P1 | 导入导出/PDF 4/6：PDF 内联格式拆行、损坏 md 静默导入垃圾页 | **未闭合** | 导出件不能直接交付；坏文件可能污染用户库 | batch-import-export-pdf / 产品实现负责人 | 修 PrintHtmlBuilder 内联渲染；坏文件拦截并给可见错误；同夹具重跑 6/6；07 更新且 strict 通过 |
 | P1-2 | P1 | 响应式/无障碍 3/7：320/380 原生窗口不可达、快捷键无效、40/40 按钮无可读名称 | **未闭合** | 窄窗、键盘、读屏用户的核心路径未验证/不可用 | batch-responsive-a11y-perf / 产品实现负责人 | 在能拖到原生 320/380 的设备复测并读 bounds；修 Ctrl+F/Z/S；补 accessibilityText；7/7 通过或按模板提交阻塞举证 |
-| P1-3 | P1（已闭合） | 关于页 T4 截图 23:13–23:14 早于 build/HAP 23:25:48 与 commit 23:25:37 | **已闭合** | 旧证据不再作为 706a1d6f 的通过依据 | pilot-feature / steward | 已用干净 worktree 706a1d6f 重建，HAP 334e4c…，00:19 复验；07 只引用 clean 文件 |
-| P1-4 | P1（已闭合） | 编辑页 T4 旧 HAP e0682 混入另一试点未提交 AboutDialog 改动 | **已闭合** | 旧 HAP 不能由 f7cd4f76 单独复现 | pilot-bugfix / steward | 已用干净 worktree f7cd4f76 重建，HAP 464160d…，AC-03/04 使用 clean 证据 |
-| P2-1 | P2 | 编辑 T4 `evidence/00-run-report.md` 仍写 HAP e0682、55/2、旧截图 | **未闭合** | 同一目录存在与 07 不一致的旧状态，复核链易误读 | pilot-bugfix / steward | 更新为 464160d/f7cd4f76/57/0，或明确标注“旧构建存档、不作为 07 依据” |
+| P1-3 | P1（已闭合） | 关于页 T4 截图 23:13–23:14 早于 build/产物 23:25:48 与 commit 23:25:37 | **已闭合** | 旧证据不再作为 706a1d6f 的通过依据 | pilot-feature / steward | 已用干净 worktree 706a1d6f 重建，产物 334e4c…，00:19 复验；07 只引用 clean 文件 |
+| P1-4 | P1（已闭合） | 编辑页 T4 旧 产物 e0682 混入另一试点未提交 AboutDialog 改动 | **已闭合** | 旧 产物 不能由 f7cd4f76 单独复现 | pilot-bugfix / steward | 已用干净 worktree f7cd4f76 重建，产物 464160d…，AC-03/04 使用 clean 证据 |
+| P2-1 | P2 | 编辑 T4 `evidence/00-run-report.md` 仍写 产物 e0682、55/2、旧截图 | **未闭合** | 同一目录存在与 07 不一致的旧状态，复核链易误读 | pilot-bugfix / steward | 更新为 464160d/f7cd4f76/57/0，或明确标注“旧构建存档、不作为 07 依据” |
 | P2-2 | P2 | 编辑 T4 07 顶部“证据索引”重复一层目录，AC-03 路径不存在 | **未闭合** | 索引句不可点击/不可追溯；表内路径本身正确 | pilot-bugfix | 改为 `evidence/AC-03-修复后-顶栏未保存-clean-f7cd.jpeg`，全路径实存 |
-| P2-3 | P2 | 编辑 T4 task-card v3 版本锚点字段仍写 `commit：3aad84de`，同表 HAP 为 464160d @f7cd4f76 | **未闭合** | 任务卡与 07/证据锚点不一致 | steward | 版本锚点改为 f7cd4f76；保留基线/修复两行说明 |
+| P2-3 | P2 | 编辑 T4 task-card v3 版本锚点字段仍写 `commit：3aad84de`，同表 产物 为 464160d @f7cd4f76 | **未闭合** | 任务卡与 07/证据锚点不一致 | steward | 版本锚点改为 f7cd4f76；保留基线/修复两行说明 |
 | P2-4 | P2 | T4 两份 metrics 没有“新 Agent 无聊天历史”的可核记录 | **部分未闭合** | “新 Agent”试点条件不能完全证明；介入次数本身已达标 | steward / pilot 两方 | 补记录 agent 创建时间、无历史/profile、仅给 SKILL.md/适配层/任务卡的证据，或明确改写该条件 |
 | P2-5 | P2 | 导入 07 AC-02/03/06 主证据是 .md/.pdf，类型写“日志” | **未闭合（低风险）** | 字段与文件格式不一致；不影响已判失败的两条欠账 | batch-import-export-pdf | 将导出文件放外部证据登记并改主证据为日志/DB，或把“文件”纳入枚举并同步检查器；strict 仍须通过 |
 | P2-6 | P2 | T4 两份 07 引用的最终 test-all 57/0 只在 `/tmp/final-test-all-no-l3.log` | **未闭合（低风险）** | 临时目录不可长期复现 | steward | 把日志复制进对应 evidence 并在 07 登记路径；保留 57/0/0 读数 |
-| P2-7 | P2 | verity `docs/reviews/clean-clone.md` 仍写“T6 还要从私有仓库重新克隆” | **未闭合（低风险）** | 与 notes-hap 的 00:05 GitHub 干净克隆记录口径冲突 | release-engineer | 在 verity 文档追加 GitHub 克隆记录/链接，或标注该文件为本地 zip 复跑存档 |
+| P2-7 | P2 | verity `docs/reviews/clean-clone.md` 仍写“T6 还要从私有仓库重新克隆” | **未闭合（低风险）** | 与 业务项目 的 00:05 GitHub 干净克隆记录口径冲突 | release-engineer | 在 verity 文档追加 GitHub 克隆记录/链接，或标注该文件为本地 zip 复跑存档 |
 | P2-8 | P2 | CI 的 `b696094` 把 anti_examples 与第 5 个示例从 workflow 移除 | **未闭合（低风险）** | CI 绿不能覆盖十类反例/发布示例；本地 10/10 已跑 | skill-engineer | 恢复两个 CI step，或新增独立 job 并给出一次绿色 run |
 
-补充 P3（不改变结论）：启动批证据目录没有 `01-build.log`/`02-hap-sha256.txt`，HAP 绑定靠仓库内文件实算 + 安装/测试时刻推定；建议归档构建日志。编辑批 AC-02 复用了 T4 的 clean-f7cd 证据，建议补一条批次独立读数。GitHub Release v1.0.0 的 assets 为空，`dist/verity.zip` 按 README 设计不入库；发布件以源码 tag 为准，建议在 Release 说明里写清“运行 `package.py --zip` 生成”。
+补充 P3（不改变结论）：启动批证据目录没有 `01-build.log`/`02-artifact-sha256.txt`，产物 绑定靠仓库内文件实算 + 安装/测试时刻推定；建议归档构建日志。编辑批 AC-02 复用了 T4 的 clean-f7cd 证据，建议补一条批次独立读数。GitHub Release v1.0.0 的 assets 为空，`dist/verity.zip` 按 README 设计不入库；发布件以源码 tag 为准，建议在 Release 说明里写清“运行 `package.py --zip` 生成”。
 
 ## 五、verity v1.0.0 发布与干净克隆
 
@@ -92,7 +94,7 @@ T4 的过程记录仍有缺口：两份 `metrics.md` 都没有“新 Agent 无�
 ## 七、T5b 复审（2026-11-07 01:20）
 
 - 复审范围：2026-11-06 全量 8 批 07/证据、覆盖总表、两个 T4 试点、导入与响应式修复证据、verity v1.0.0 复核记录。
-- 复审方式：只读逐份核对 07/证据/路径；重跑 `check_coverage.py`、8 批 `check_evidence.py --strict`、响应式项目 `check-acceptance-evidence.mjs`；实读 PDF 渲染图、坏 Markdown 报错截图、DB 前后计数、AC-04/AC-05 读数；核对 T4 两份 07、HAP 哈希、run report 与任务卡锚点。
+- 复审方式：只读逐份核对 07/证据/路径；重跑 `check_coverage.py`、8 批 `check_evidence.py --strict`、响应式项目 `项目检查器`；实读 PDF 渲染图、坏 Markdown 报错截图、DB 前后计数、AC-04/AC-05 读数；核对 T4 两份 07、产物 哈希、run report 与任务卡锚点。
 - 复审结论：**未交付（阻塞）**。8 批账本 8/8 已覆盖，7 批通过、0 批失败、1 批（响应式/无障碍/性能）未交付（阻塞）；导入导出/PDF 已由 6/6 通过；T4 两份 07 均 4/4 通过。阻塞项是设备能力缺失，不是产品失败，也不能写成通过。
 
 ### 7.1 8 批与门禁
@@ -100,7 +102,7 @@ T4 的过程记录仍有缺口：两份 `metrics.md` 都没有“新 Agent 无�
 | 批次 | 07 结论 | 复审 | 关键依据 |
 |---|---|---|---|
 | 加密回收站 | 通过 7/7 | 通过 | 3aad84de；加密后 DB 无明文，错密码提示正确，回收站恢复仍加密，彻底删除无残留 |
-| 启动与数据 | 通过 5/5 | 通过 | 706a1d6f；HAP 7e32cc8b…；T0 已改 3aad84de；AC-05 已补 `AC-05-after-restart.txt` 的 `integrity=ok`、`has_UNSAVED2=0` |
+| 启动与数据 | 通过 5/5 | 通过 | 706a1d6f；产物 7e32cc8b…；T0 已改 3aad84de；AC-05 已补 `AC-05-after-restart.txt` 的 `integrity=ok`、`has_UNSAVED2=0` |
 | 搜索收藏标签 | 通过 5/5 | 通过 | 3aad84de；搜索、收藏、标签入口与 DB 读数一致 |
 | 日历待办 | 通过 6/6 | 通过 | 3aad84de；待办新建/勾选/删除、日期与 DB 一致 |
 | 树导航 | 通过 7/7 | 通过 | 3aad84de；移动/删除/恢复、展开/多选有补充 DB 读数；性能中位 247ms ≤500ms |
@@ -114,7 +116,7 @@ T4 的过程记录仍有缺口：两份 `metrics.md` 都没有“新 Agent 无�
 
 - AC-03：`evidence/fix-2026-11-07/02-pdf-check.txt` 记录 PDF 61,914B、PDFKit 1 页；实读 `02-pdf-render.png`，同段“粗体、斜体、代码、链接”连续排在同一行，不再各自拆行。证据路径存在。
 - AC-05：`01-broken-md-error.jpeg` 显示“无法读取所选文件 / 换一批 .md 文件再试 / 重新选择文件”，无“已导入”Toast；`03-db-before-after.txt` 记录 pages 15|15，导入前后无新增页。证据路径存在。
-- HAP/commit：07 与 `04-hap-sha256.txt` 的 HAP 为 `59d3854a83cab64e8f7212b8c3abf8c9be3e4a9c43f678cf3199e1cc9ca361fc`（9,490,987B），与当前 `entry/build/default/outputs/default/entry-default-signed.hap` 实算一致；`05-build.log` 显示 01:06 BUILD SUCCESSFUL，两个修复 commit `3f94cbcc`（PrintHtmlBuilder）与 `eff7c879`（Markdown 导入拦截）均为 01:09:03。构建早于提交约 3 分钟，属于“先构建验证、后提交”的时序；HAP 内容包含两项修复，07 以 eff7c879 作为修复后构建锚点，绑定可核。该时序作为 P3 归档建议，不影响 6/6 结论。
+- 产物/commit：07 与 `04-artifact-sha256.txt` 的 产物 为 `59d3854a83cab64e8f7212b8c3abf8c9be3e4a9c43f678cf3199e1cc9ca361fc`（9,490,987B），与当前 `构建输出目录try-default-signed.artifact` 实算一致；`05-build.log` 显示 01:06 BUILD SUCCESSFUL，两个修复 commit `3f94cbcc`（PrintHtmlBuilder）与 `eff7c879`（Markdown 导入拦截）均为 01:09:03。构建早于提交约 3 分钟，属于“先构建验证、后提交”的时序；产物 内容包含两项修复，07 以 eff7c879 作为修复后构建锚点，绑定可核。该时序作为 P3 归档建议，不影响 6/6 结论。
 - 07 的 AC-03/AC-05 新证据路径均存在；包结论“通过 6/6”，欠账已销账；观察项（多页导出无独立入口、图片子项沿用基线、导入侧取消未单独取证）保留，不改变本批结论。
 
 ### 7.3 响应式/无障碍/性能复核
@@ -128,10 +130,10 @@ T4 的过程记录仍有缺口：两份 `metrics.md` 都没有“新 Agent 无�
 
 | 试点 | 07 结论 | 复审 | 关键依据 |
 |---|---|---|---|
-| 关于页复制版本号 | 4/4 通过 | 通过 | 基线 3aad84de；功能 706a1d6f；干净 worktree HAP `334e4c2d…`（9,492,560B）；`01-build-clean-706.log` 17s739；`02-hap-sha256-clean-706.txt` 哈希一致；`12-final-test-all-57-0.log` 57/0/0 |
-| 编辑保存提示修复 | 4/4 通过 | 通过 | 基线 3aad84de；修复 f7cd4f76；干净 worktree HAP `464160d0…`（9,487,351B）；AC-03/04 使用 clean-f7cd 证据；`06-final-test-all-57-0.log` 57/0/0；任务卡锚点已改 f7cd4f76，旧 e0682 已标注作废 |
+| 关于页复制版本号 | 4/4 通过 | 通过 | 基线 3aad84de；功能 706a1d6f；干净 worktree 产物 `334e4c2d…`（9,492,560B）；`01-build-clean-706.log` 17s739；`02-artifact-sha256-clean-706.txt` 哈希一致；`12-final-test-all-57-0.log` 57/0/0 |
+| 编辑保存提示修复 | 4/4 通过 | 通过 | 基线 3aad84de；修复 f7cd4f76；干净 worktree 产物 `464160d0…`（9,487,351B）；AC-03/04 使用 clean-f7cd 证据；`06-final-test-all-57-0.log` 57/0/0；任务卡锚点已改 f7cd4f76，旧 e0682 已标注作废 |
 
-两份 07 均 10 列、4 行全通过，证据路径存在，`check_evidence.py --strict` 与项目 `check-acceptance-evidence.mjs` 均通过。关于页 HAP 有 build log/hash 归档；编辑页 HAP 的哈希在 07 与 `00-run-report.md` 中一致，上一轮复审时已从 `/tmp/ruiku-f7cd4f76` 临时 worktree 复算为 `464160d…`；本轮该 worktree 已被清理，evidence 目录没有单独的 clean build log/hash 文件，无法再次复算，作为 P3 证据归档建议。T4 的 metrics 已补“新 Agent 无聊天历史、仅提供 SKILL/适配层/任务卡”，P2-4 已闭合。
+两份 07 均 10 列、4 行全通过，证据路径存在，`check_evidence.py --strict` 与项目 `项目检查器` 均通过。关于页 产物 有 build log/hash 归档；编辑页 产物 的哈希在 07 与 `00-run-report.md` 中一致，上一轮复审时已从 `/tmp/pilot-f7cd4f76` 临时 worktree 复算为 `464160d…`；本轮该 worktree 已被清理，evidence 目录没有单独的 clean build log/hash 文件，无法再次复算，作为 P3 证据归档建议。T4 的 metrics 已补“新 Agent 无聊天历史、仅提供 SKILL/适配层/任务卡”，P2-4 已闭合。
 
 ### 7.5 未交付（阻塞）项与复验条件
 
@@ -157,7 +159,7 @@ T4 的过程记录仍有缺口：两份 `metrics.md` 都没有“新 Agent 无�
 
 ### 8.1 480/900 改判成立，未发现伪通过
 
-- `task-card.md` v3 已把原生 320/380 从硬判据降为辅助观察，正式判据为 480vp 单栏/编辑页、900vp 三栏、键盘操作、关键按钮名称与焦点；读屏音频明确只作观察，不作为本批硬门槛。该口径与 `notes-hap/AGENTS.md` 新增的“不把缺失设备设成硬门槛”一致。
+- `task-card.md` v3 已把原生 320/380 从硬判据降为辅助观察，正式判据为 480vp 单栏/编辑页、900vp 三栏、键盘操作、关键按钮名称与焦点；读屏音频明确只作观察，不作为本批硬门槛。该口径与 `业务项目/AGENTS.md` 新增的“不把缺失设备设成硬门槛”一致。
 - AC-01/02 的原生证据为 480vp 截图与窗口读数：`evidence/AC-01/screenshot-native-clamped-480vp.png`、`window-bounds.txt`（912px ÷ density 1.9 = 480.0vp），`evidence/AC-02/screenshot-native-480-list.png`、`screenshot-native-480-editor-return.png`；网页 Chrome 320/380 只作为 Web 正文压力辅助，未写成原生 320/380 可用。900vp 有 `evidence/AC-03/layout-900.json` 与截图正对照。
 - AC-04 的复核读数 `evidence/AC-04/fix-2026-11-07/AC-04-读数.md` 记录 Ctrl+F 查找栏、Ctrl+Z checkbox false→true、Ctrl+S“✓ 已保存”、Tab/Space/Enter/Esc；原“快捷键全部无效”是焦点未回正文、菜单命中页面正文导致的假阴性，改判通过成立。
 - AC-05 的 `evidence/AC-05/fix-2026-11-07/AC-05-读数.md` 对四个关键按钮（多选、新建页面、更多操作、关闭标签页）做了代码/资源核对，`.accessibilityText` 均非空；设备无 screenreader/TTS、`dumpLayout` 不输出该属性，读数明确写“不能声称已实际播报”，置信度中。07 只声明“名称与键盘焦点通过、读屏音频仅观察”，没有把代码核对写成读屏实测。
@@ -178,7 +180,7 @@ T4 的过程记录仍有缺口：两份 `metrics.md` 都没有“新 Agent 无�
 ### 8.3 已核清单
 
 - 覆盖检查：`python3 /Users/dingliang/JavaProject/verity/scripts/check_coverage.py docs/验收/2026-11-06-全量/00-覆盖总表.md --adapter docs/验收/verity-适配层.json` → 8 行、已覆盖 8、缺失 0、不适用 0、账本 8/8、通过 8/失败 0/阻塞 0，exit 0。
-- 响应式账本：`check_evidence.py --strict` → 7 行、结论=通过（通过 7），exit 0；项目 `check-acceptance-evidence.mjs` → 新格式 12 个批次/12 份 07、账本 79 条，exit 0。
+- 响应式账本：`check_evidence.py --strict` → 7 行、结论=通过（通过 7），exit 0；项目 `项目检查器` → 新格式 12 个批次/12 份 07、账本 79 条，exit 0。
 - 07 表内 7 条证据路径全部存在；`AC-04/fix-2026-11-07/`、`AC-05/fix-2026-11-07/` 目录与读数/JSON/截图均在。
 - 覆盖总表 8 行均“已覆盖”，说明段已写 8/8、8 通过/0 失败/0 阻塞，并明确“T5c 只读复核进行中；复核通过后本行改为最终通过”；没有把“已覆盖”写成“通过”。
 - 09 报告仍是未交付（阻塞）、7 通过/1 阻塞；这是本轮不能判通过的核心原因。
@@ -220,7 +222,7 @@ T4 的过程记录仍有缺口：两份 `metrics.md` 都没有“新 Agent 无�
 - `node tools/check-workflow-consistency.mjs`：rc 0，输出“流程一致性：文档复核戳、入口索引、头注释、交付结论词表与模板、验收证据账本、L1 探针映射、L2 探针债务、门禁接线全部一致”。
 - `python3 .../check_evidence.py --strict ... 响应式/07-验收回归清单.md`：rc 0，`[OK] ... 7 行，结论=通过（通过 7）`。
 - `python3 .../check_coverage.py ... 00-覆盖总表.md`：rc 0，`8 行（已覆盖 8 / 缺失 0 / 不适用 0），账本 8/8，结论通过 8 / 失败 0 / 阻塞 0`。
-- 项目 `node tools/check-acceptance-evidence.mjs`：rc 0，`新格式 12 个批次 / 12 份 07，账本 79 条`。
+- 项目 `node tools/项目检查器`：rc 0，`新格式 12 个批次 / 12 份 07，账本 79 条`。
 
 ### 9.4 复审结论
 

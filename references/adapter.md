@@ -20,7 +20,7 @@
 
 也可以放在项目自己的验收目录，命名为 `verity-适配层.json`（中文文件名直接可被检查器发现）。从 `templates/adapter.json` 复制，按本项目实际情况填写。检查器的自动发现顺序是 `verity-适配层.json` → `.verity/adapter.json` → `verity-adapter.json` → `adapter.json`；命令行 `--adapter` 显式指定时优先，不存在直接报错。适配层属于项目资产，跟着项目走；不要把它复制回 verity 仓库，也不要把里面的路径、命令、设备入口写进 verity 的规则或示例。
 
-适配层里**禁止出现**：密码、令牌、Cookie、私钥、设备序列号、内网地址、真实用户数据。需要引用凭据时写“从环境变量读取”之类的入口说明，不写值。
+适配层里**禁止出现**：生产密码/真实凭据、令牌、Cookie、私钥、设备序列号、内网地址、真实用户数据。开发环境的测试口令不属于生产凭据，可按测试数据管理。需要引用凭据时写“从环境变量读取”之类的入口说明，不写值。
 
 ## 3. 字段
 
@@ -37,7 +37,9 @@
 | `paths.ledger_root` | 是 | 07 账本根目录，相对项目根 | 检查器会递归扫描其中的 `07-*.md`，并与覆盖总表对账 |
 | `paths.evidence_root` | 是 | 证据文件根目录，相对项目根 | 07 里的证据路径建议相对项目根或账本目录，保持可移植 |
 | `paths.coverage_master` | 否 | 覆盖总表路径，相对项目根 | 仅作记录；命令行参数优先 |
-| `paths.ledger_template` | 否 | 项目自己的 07 账本模板，相对项目根 | 填了它，`init` 会按项目模板生成；留空则用 verity 仓库的 v1 十列模板。模板文件必须存在；`check_evidence.py --adapter` 会读取模板里的 marker 判断是否为 v1 格式 |
+| `paths.ledger_filename` | 否 | 项目账本文件名，默认 `07-验收回归清单.md` | 只影响批次包互链检查；仍须符合 `07-*.md` |
+| `paths.task_card_filename` | 否 | 项目任务卡文件名，默认 `task-card.md` | 只影响批次包互链检查 |
+| `paths.ledger_template` | 否 | 项目自己的 07 账本模板，相对项目根 | 填了它，`init` 会按项目模板生成；留空则用 verity 仓库的 v1 schema 2 十三列模板。模板文件必须存在；`check_evidence.py --adapter` 会读取模板里的 marker 判断是否为 v1 格式 |
 | `paths.task_card_template` | 否 | 项目自己的任务卡模板，相对项目根 | 填了它，`init` 按项目模板生成任务卡；留空用 verity 仓库模板 |
 | `paths.blocking_form_template` | 否 | 项目自己的阻塞举证单模板，相对项目根 | 填了它，`init` 按项目模板生成举证单；留空用 verity 仓库模板 |
 | `ledger.statuses` | 否 | 账本允许的状态数组 | 必须是 verity 支持值的非空子集；项目验收建议 `通过 / 未交付-失败 / 未交付-阻塞 / 未覆盖` |
@@ -46,7 +48,7 @@
 | `ledger.confidences` | 否 | 证据置信度数组 | 必须是 `高 / 中 / 低` 的非空子集 |
 | `device.entry` | 是 | 设备操作入口：项目内脚本路径、工具名或人工操作说明 | 不写序列号、账号、连接地址；不把设备命令抄进 verity |
 | `redaction.rules` | 是 | 脱敏规则数组，每项含 `pattern`（正则）、`replace`、`description` | 证据落盘或提交前按顺序应用 |
-| `redaction.forbidden` | 是 | 绝对不能出现的内容类别列表 | 至少包含密码、令牌、Cookie、私钥、真实用户数据 |
+| `redaction.forbidden` | 是 | 绝对不能出现的内容类别列表 | 至少包含生产密码/真实凭据、令牌、Cookie、私钥、真实用户数据 |
 | `modules` | 是 | 在用模块列表，每项含 `id`、`name`、`in_use` | 检查器要求每个 `in_use: true` 的模块在覆盖总表至少有一行 |
 
 命令对象统一写成：
@@ -75,7 +77,7 @@ python3 <verity 仓库>/scripts/check_coverage.py <覆盖总表> \
   --project-root <项目根>
 ```
 
-项目使用 `paths.ledger_template` 生成 v1 十列账本时，检查单份 07 要带上同一个适配层，让检查器按项目格式和项目根解析证据：
+项目使用 `paths.ledger_template` 生成 v1 schema 2 十三列账本时，检查单份 07 要带上同一个适配层，让检查器按项目格式和项目根解析证据：
 
 ```bash
 python3 <verity 仓库>/scripts/check_evidence.py <07 路径> \
