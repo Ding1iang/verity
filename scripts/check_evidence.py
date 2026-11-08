@@ -27,6 +27,7 @@ import argparse
 import hashlib
 import io
 import json
+import os
 import shutil
 import struct
 import tarfile
@@ -37,7 +38,7 @@ import subprocess
 import sys
 from collections import Counter
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -1439,6 +1440,30 @@ def check_completion_audit(
         )
 
 
+def _run_review_command(command: str, root: Path, timeout: int = 120) -> tuple[int, str, str]:
+    """在 HEAD 的干净导出树里执行一条复核命令，返回退出码、输出和 HEAD。
+
+    复核不是“写一条命令”就算数：必须在干净树上真跑，才能区分“复核过”
+    和“把命令和输出抄进表格”。临时树只包含 HEAD 内容，避免工作区未提交
+    文件替复核结果背书；超时或无法启动同样按失败处理。
+    """
+    temporary, worktree = _extract_clean_worktree(root)
+    try:
+        process = subprocess.run(
+            command,
+            shell=True,
+            cwd=worktree,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        output = (process.stdout or "") + (process.stderr or "")
+        return process.returncode, output, _git_head(root)
+    finally:
+        temporary.cleanup()
+
+
 def check_independent_review(
     sections,
     acs: list[tuple[str, str, int]],
@@ -1448,7 +1473,7 @@ def check_independent_review(
     ledger_dir: Path,
     issues: list[Issue],
 ) -> None:
-    """检查独立复核：逐 AC 表态、复跑命令和产出者≠复核者。"""
+    """检查独立复核：逐 AC 表态、真跑复跑命令、核对输出/HEAD/时间。"""
     section = find_section(sections, "独立复核")
     if section is None:
         return
@@ -1469,6 +1494,7 @@ def check_independent_review(
         "exitcode": ("复跑退出码", "退出码", "exit code"),
         "output": ("复跑输出", "输出摘要", "stdout/stderr 摘要"),
         "runtime": ("复跑时间", "执行时间"),
+        "head": ("复跑 head", "复跑head", "head", "复跑提交"),
     }.items():
         indexes[key] = next((i for i, item in enumerate(normalized) if item in aliases), None)
     missing = [key for key, index in indexes.items() if index is None]
@@ -1484,6 +1510,13 @@ def check_independent_review(
         )
 
     covered: dict[str, list[dict]] = {}
+    # 同一批次里多个 AC 可能复用同一条命令；每个命令只跑一次，既省时间，
+    # 也保证同一批复核看到的输出完全一致。内层检查（复核命令本身调用
+    # check_evidence）用环境变量熔断，避免递归执行。
+    run_cache: dict[str, tuple[int, str] | Issue] = {}
+    review_depth = bool(os.environ.get("VERITY_REVIEW_DEPTH"))
+    actual_head = _git_head(root)
+    now = datetime.now()
     for number, row in review_rows:
         values = {key: cell(row, index).strip() for key, index in indexes.items()}
         if all(not value for value in values.values()):
@@ -1529,8 +1562,75 @@ def check_independent_review(
         if command and (
             re.match(r"^(echo|true|false|printf|cat)\b", command)
             or command.startswith("<")
+            or re.search(r"\bpython3?\s+-c\b", command)
         ):
-            issues.append(Issue("E_REVIEW_COMMAND", "复跑命令不能是 echo/true 这类假命令", number))
+            issues.append(
+                Issue(
+                    "E_REVIEW_COMMAND",
+                    "复跑命令不能是 echo/true/python -c 这类不产生复核事实的假命令",
+                    number,
+                )
+            )
+        if command and command not in run_cache:
+            if review_depth:
+                run_cache[command] = Issue("E_REVIEW_COMMAND", "复核命令递归执行，已熔断")
+            else:
+                try:
+                    code, actual_output, actual_head = _run_review_command(command, root)
+                    normalized = " ".join(actual_output.split())
+                    run_cache[command] = (code, normalized)
+                except (OSError, subprocess.TimeoutExpired) as error:
+                    run_cache[command] = Issue("E_REVIEW_COMMAND", f"复核命令执行失败：{error}")
+        if command:
+            result = run_cache.get(command)
+            if isinstance(result, Issue):
+                issues.append(result)
+            else:
+                actual_code, actual_output = result
+                if actual_code != 0:
+                    issues.append(
+                        Issue(
+                            "E_REVIEW_COMMAND",
+                            f"复核命令实际退出码 {actual_code}，不能写通过；输出：{actual_output[-200:]}",
+                            number,
+                        )
+                    )
+                claimed_output = " ".join(values["output"].split())
+                if claimed_output and not claimed_output.startswith("<") and claimed_output not in {"命令退出 0", "命令退出0"}:
+                    if claimed_output not in actual_output:
+                        issues.append(
+                            Issue(
+                                "E_REVIEW_COMMAND",
+                                "复跑输出摘要与实际执行输出不一致，不能只抄一句“命令退出 0”",
+                                number,
+                            )
+                        )
+                if values["head"]:
+                    claimed_head = values["head"].strip().strip("`")
+                    if not re.fullmatch(r"[0-9a-fA-F]{7,40}", claimed_head):
+                        issues.append(Issue("E_REVIEW_COMMAND", "复跑 HEAD 必须是提交哈希", number))
+                    else:
+                        # 复核提交必须等于 HEAD 或为其祖先：允许复核后追加文档/
+                        # 证据提交，但不允许把一个从未在分支上出现过的哈希写进来。
+                        ancestor, error = git_is_ancestor(root, claimed_head)
+                        if not ancestor:
+                            issues.append(
+                                Issue(
+                                    "E_REVIEW_COMMAND",
+                                    f"复跑 HEAD“{claimed_head}”不是当前 HEAD“{actual_head[:12]}”的祖先"
+                                    + (f"：{error}" if error else ""),
+                                    number,
+                                )
+                            )
+        if values["runtime"]:
+            try:
+                runtime_value = datetime.fromisoformat(values["runtime"].replace("Z", "+00:00"))
+                if runtime_value.tzinfo is not None:
+                    runtime_value = runtime_value.astimezone().replace(tzinfo=None)
+                if runtime_value > now.replace(microsecond=0) + timedelta(minutes=5):
+                    issues.append(Issue("E_REVIEW_COMMAND", "复跑时间不能晚于当前时间", number))
+            except ValueError:
+                pass
         paths = extract_paths(values["evidence"])
         if not paths:
             issues.append(Issue("E_REVIEW", "复核行没有复跑证据路径", number))

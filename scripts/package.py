@@ -53,11 +53,11 @@ EXCLUDED_PATTERNS = ("*.local.*", "*.secret", "*.pem", "*.key")
 # 分析记录不是技能交付物：它引用外部仓库、体量大且会随调研变化，不进技能包。
 EXCLUDED_RELATIVE_PATTERNS = (
     "docs/2026-*外部工作流对比与优化清单.md",
-    "docs/reviews/32-item-review.md",
-    "docs/reviews/32-item-verification.md",
-    "docs/reviews/32-item-review-round2.md",
+    "docs/reviews/32-item-review*.md",
+    "docs/reviews/32-item-verification*.md",
     "tests/fixtures/*",
     "docs/reviews/2026-11-06-independent-review.md",
+    "docs/reviews/clean-clone.md",
     ".github/ISSUE_TEMPLATE/*",
     "SECURITY.md",
     "CONTRIBUTING.md",
@@ -193,10 +193,16 @@ def package_selftest() -> int:
             case.mkdir()
             for index in range(count):
                 (case / f"file-{index:02d}.txt").write_text("x", encoding="utf-8")
+            if count == 60:
+                # 复核报告也是仓库里的真实文件；打包规则必须用通配符把它
+                # 排除，否则每轮复核一落盘就会把 60 文件顶成 61。
+                review_dir = case / "docs" / "reviews"
+                review_dir.mkdir(parents=True)
+                (review_dir / "32-item-review-round3.md").write_text("review", encoding="utf-8")
             files, _ = collect_files(case, case / "dist" / "verity.zip")
             _, problems = check_limits(files, DEFAULT_MAX_FILES, DEFAULT_MAX_BYTES)
             ok = (not problems) if should_pass else bool(problems)
-            print(f"[{'PASS' if ok else 'FAIL'}] {count} 文件：{'应通过' if should_pass else '应失败'}（{len(files)} 个）")
+            print(f"[{'PASS' if ok else 'FAIL'}] {count} 文件：{'应通过' if should_pass else '应失败'}（{len(files)} 个；含复核报告用例）")
             if not ok:
                 return 1
     return 0

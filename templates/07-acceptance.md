@@ -69,11 +69,11 @@
 
 ## 独立复核
 
-| AC-ID | 复核结论 | 复跑命令 | 复跑证据 | 复跑退出码 | 复跑输出 | 复跑时间 | 复核人 | 时间 |
-|---|---|---|---|---|---|---|---|---|
-| AC-01 | supports | python3 scripts/selftest.py | README.md | 0 | 5/5 通过 | <YYYY-MM-DDTHH:MM:SS> | <独立复核者> | <YYYY-MM-DD> |
+| AC-ID | 复核结论 | 复跑命令 | 复跑证据 | 复跑退出码 | 复跑输出 | 复跑时间 | 复跑 HEAD | 复核人 | 时间 |
+|---|---|---|---|---|---|---|---|---|---|
+| AC-01 | supports | python3 scripts/selftest.py | README.md | 0 | 结果：5/5 通过 | <YYYY-MM-DDTHH:MM:SS> | <7-40 位提交哈希> | <独立复核者> | <YYYY-MM-DD> |
 
-> 复核结论只能是 `supports` / `does-not-support` / `unclear`；每条 AC 至少一个 `supports`，至少复跑一条 A 级证据命令。
+> 复核结论只能是 `supports` / `does-not-support` / `unclear`；每条 AC 至少一个 `supports`，至少复跑一条 A 级证据命令。检查器会在 HEAD 干净树里真跑命令，核对退出码、输出摘要、复跑时间和 HEAD；只抄命令/输出不算复核。
 > 批次执行者、单行产出者都不能与复核者相同；复核者只能看证据和复跑结果，不能替实现者补证据。
 
 ## 复盘

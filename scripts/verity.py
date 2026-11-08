@@ -685,7 +685,7 @@ def collect_batch_files(batch_dir: Path) -> list[Path]:
     files = [
         path
         for path in batch_dir.rglob("*")
-        if path.is_file() and path.name not in {"manifest.json", "ev-runs.log"} and ".git" not in path.parts
+        if path.is_file() and path.name != "manifest.json" and ".git" not in path.parts
     ]
     return sorted(files, key=lambda item: item.as_posix())
 
@@ -1027,8 +1027,45 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                 )
             )
             commands = adapter.get("commands", {})
-            total_commands = sum(len(commands.get(key, [])) for key in ("static", "contract", "device", "build"))
-            checks.append(("证据命令", total_commands > 0, f"{total_commands} 条"))
+            total_commands = sum(
+                len(commands.get(key, [])) for key in ("static", "contract", "device", "build")
+            )
+            # 适配层有两条命令通道：commands 是构建/静态检查，evidence_commands
+            # 是可由 gate --run 复跑的 EV 证据命令。预检必须两边都看，不能把
+            # 只配置了 evidence_commands 的合法项目误判成“0 条”。
+            evidence_commands = adapter.get("evidence_commands", {})
+            if isinstance(evidence_commands, dict):
+                evidence_items = list(evidence_commands.items())
+            elif isinstance(evidence_commands, list):
+                evidence_items = [
+                    (item.get("id", ""), item.get("command", ""))
+                    for item in evidence_commands
+                    if isinstance(item, dict)
+                ]
+            else:
+                evidence_items = []
+            invalid_evidence = [
+                str(key)
+                for key, command in evidence_items
+                if not re.fullmatch(r"EV-\d{2,3}", str(key)) or not str(command).strip()
+            ]
+            total_evidence = len(evidence_items)
+            if invalid_evidence:
+                checks.append(
+                    (
+                        "证据命令",
+                        False,
+                        "evidence_commands 配置无效：" + "、".join(invalid_evidence),
+                    )
+                )
+            else:
+                checks.append(
+                    (
+                        "证据命令",
+                        total_commands + total_evidence > 0,
+                        f"{total_commands} 条 commands，{total_evidence} 条 evidence_commands",
+                    )
+                )
             channels = adapter.get("evidence_channels", [])
             if not channels:
                 checks.append(("取证通道正负对照", True, "未配置（跳过）"))
@@ -1051,6 +1088,23 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                         f"正对照 exit={positive_code}，负对照 exit={negative_code}",
                     )
                 )
+    # 文档里的计数容易在连续修复中漂移。只在 verity 自身仓库检查，
+    # 避免把使用适配层的普通项目误判为“文档缺失”。
+    matrix = root / "docs" / "optimization-matrix.md"
+    if matrix.is_file():
+        expected_counts = {
+            root / "README.md": ("42 个反例", "60 / 60"),
+            root / "CHANGELOG.md": ("42/42", "60/60"),
+            matrix: ("42/42",),
+        }
+        missing_counts: list[str] = []
+        for file, needles in expected_counts.items():
+            text = file.read_text(encoding="utf-8") if file.is_file() else ""
+            for needle in needles:
+                if needle not in text:
+                    missing_counts.append(f"{file.relative_to(root)} 缺“{needle}”")
+        checks.append(("文档计数", not missing_counts, "一致" if not missing_counts else "；".join(missing_counts)))
+
     failed = 0
     print(f"verity doctor（版本 {repo_version()}）")
     for name, ok, detail in checks:

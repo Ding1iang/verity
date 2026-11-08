@@ -47,6 +47,10 @@ jobs:
           python scripts/check_evidence.py examples/02-bug-fix/07-验收回归清单.md
           python scripts/check_evidence.py examples/03-blocking/07-验收回归清单.md
           python scripts/check_evidence.py examples/04-project-v1/07-验收回归清单.md
+          python scripts/check_evidence.py examples/05-release/07-验收回归清单.md
+
+      - name: 适配层与文档计数预检
+        run: python scripts/verity.py doctor --root . --adapter tests/fixtures/valid-adapter.json
 
       # 本地 pre-push 可直接复制这一组 gate；PR/push 在 CI 强制执行同一检查。
       - name: 本地完成线门禁

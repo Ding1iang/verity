@@ -25,4 +25,6 @@ dist/
 build/
 *.zip
 *.log
+# 证据命令执行记录必须随证据包交付，不能被通用日志规则吃掉。
+!**/evidence/ev-runs.log
 tmp/

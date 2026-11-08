@@ -191,6 +191,9 @@ def v2_case(
     case_dir.mkdir(parents=True, exist_ok=True)
     for filename in ("task-card.md", "journey-01.md", "README.md"):
         shutil.copyfile(V2_BASE / filename, case_dir / filename)
+    # 复核命令现在会真的在干净树里执行；夹具必须带上被调用的检查器脚本，
+    # 否则失败原因会变成“脚本不存在”，掩盖目标规则。
+    shutil.copytree(REPO_ROOT / "scripts", case_dir / "scripts", dirs_exist_ok=True)
     if card_mutate is not None:
         card = card_mutate((case_dir / "task-card.md").read_text(encoding="utf-8"))
         (case_dir / "task-card.md").write_text(card, encoding="utf-8")
@@ -208,6 +211,8 @@ def v2_case(
     subprocess.run(["git", "commit", "-qm", "fixture"], cwd=case_dir, check=False)
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=case_dir, capture_output=True, text=True, check=False).stdout.strip()
     text = re.sub(r"\b[0-9a-f]{40}\b", commit, text)
+    # 复核表的“复跑 HEAD”是短哈希，单独替换，确保夹具绑定自己的提交。
+    text = text.replace("| b60b207 |", f"| {commit[:7]} |")
     for filename, content in (extra or {}).items():
         path = case_dir / filename
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -520,9 +525,10 @@ def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
     )
 
     def fake_review(text: str) -> str:
+        # 命令是真的，但输出摘要抄了一句不存在的内容；检查器必须比对实际输出。
         return re.sub(
-            r"\| `python3 [^`]+` \| README\.md \| 0 \| 命令退出 0 \|",
-            "| `echo fake` | README.md | 0 | fake |",
+            r"\| `python3 scripts/selftest\.py` \| README\.md \| 0 \| 结果：5/5 通过 \|",
+            "| `python3 scripts/selftest.py` | README.md | 0 | fabricated output |",
             text,
             count=1,
         )
@@ -531,6 +537,23 @@ def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
         (
             "v2-review-fake",
             v2_case(root, "v2-review-fake", mutate=fake_review),
+            "E_REVIEW_COMMAND",
+        )
+    )
+
+    def inline_fake_review(text: str) -> str:
+        # 用 python -c 打印一句假输出，命令本身没有复核任何事实，必须被拒绝。
+        return re.sub(
+            r"\| `python3 scripts/selftest\.py` \| README\.md \| 0 \| 结果：5/5 通过 \|",
+            "| `python3 -c \"print('fabricated')\"` | README.md | 0 | fabricated |",
+            text,
+            count=1,
+        )
+
+    cases.append(
+        (
+            "v2-review-inline-fake",
+            v2_case(root, "v2-review-inline-fake", mutate=inline_fake_review),
             "E_REVIEW_COMMAND",
         )
     )

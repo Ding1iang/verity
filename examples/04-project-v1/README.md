@@ -32,7 +32,15 @@
 python3 scripts/check_evidence.py examples/04-project-v1/07-验收回归清单.md
 ```
 
-项目接入适配层后，`--adapter` 会同时提供项目根、模板格式和枚举；本示例不依赖适配层。
+`check_evidence.py` 本身不依赖适配层。但完整本地门禁还要执行 EV 命令并核对证据清单，必须显式指定测试适配层：
+
+```bash
+python3 scripts/verity.py gate --root . \
+  --ledger examples/04-project-v1/07-验收回归清单.md \
+  --adapter tests/fixtures/valid-adapter.json --run
+```
+
+预期 5/5 通过（证据账本、覆盖总表跳过、证据包清单、范围锁、脱敏）。不带 `--adapter` 时证据包清单步骤会跳过，只输出 4/5；4/5 不是完整门禁，不能引用为“通过”。
 
 ## 预期输出
 

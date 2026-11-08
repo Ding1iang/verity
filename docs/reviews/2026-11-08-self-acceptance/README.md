@@ -7,7 +7,7 @@
 - `task-card.md`：全流程任务卡，含车道与风险、立卡前盘问、spec-lite、范围锁和 AC-01–06。
 - `journey-01.md`：从 init 到 gate 的 3 步用户旅程，结论通过。
 - `07-验收回归清单.md`：十三列账本、证据身份、完成审计、独立复核和复盘。
-- `evidence/04-verification.log`：本机真实命令日志，包含 8 条 verify、41 个反例、gate 正负对照、doctor、report、metrics、scan、判据/盘问/spec 负向夹具和 upgrade。
+- `evidence/04-verification.log`：本机真实命令日志，包含 8 条 verify、42 个反例、gate 正负对照、doctor、report、metrics、scan、判据/盘问/spec 负向夹具和 upgrade。
 - `manifest.json`：证据包清单，记录文件、SHA-256、字节数、是否被 git 跟踪和来源命令。
 - `blocking-form.md`：本批无阻塞，保留结构供复核。
 
