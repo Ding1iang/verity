@@ -3020,8 +3020,17 @@ def run_evidence_commands(
     if records:
         evidence_dir = path.parent / "evidence"
         evidence_dir.mkdir(parents=True, exist_ok=True)
-        with (evidence_dir / "ev-runs.log").open("a", encoding="utf-8") as handle:
-            handle.write("\n".join(records) + "\n")
+        log_path = evidence_dir / "ev-runs.log"
+        existing = log_path.read_text(encoding="utf-8") if log_path.is_file() else ""
+        with log_path.open("a", encoding="utf-8") as handle:
+            for record in records:
+                # 同一 HEAD、同一命令、同一退出码只记一次；重复跑 gate 不应因为
+                # 追加新时间戳而让已经登记的 manifest SHA-256 失效。
+                stable = record.split(" HEAD=", 1)[1].split(" command=", 1)[0]
+                if stable in existing:
+                    continue
+                handle.write(record + "\n")
+                existing += record + "\n"
 
 
 def _git_head(root: Path) -> str:
