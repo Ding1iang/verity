@@ -1,7 +1,7 @@
 # verity v1.3.0 自验收验证日志
 
 - 日期：2026-11-08
-- 代码 HEAD：aff9e377443f0f90b0d23345340cbb60861191bf（最终实现提交；此后仅允许记录性改动）
+- 代码 HEAD：025ed84436b18bcfff9823217874f083c992f58a（最终实现提交；此后仅允许记录性改动）
 - 路径约定：以下命令均在仓库根执行，输出中的仓库根已用 `<repo>` 表示；不含机器绝对路径。
 - 说明：本日志只记录实际执行过的命令与读数；失败演示单独标注，不混入通过结论。
 
@@ -88,7 +88,7 @@ $ python3 scripts/check_evidence.py --adapter tests/fixtures/valid-adapter.json 
 [OK] <repo>/docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md：6 行，结论=通过（通过 6）
 
 $ cat docs/reviews/2026-11-08-self-acceptance/evidence/ev-runs.log
-{"time":"2026-11-08T17:32:11","head":"aff9e377443f0f90b0d23345340cbb60861191bf","ev":"EV-01","command":"python3 scripts/selftest.py","exit":0,"output":"... | 结果：5/5 通过","output_sha256":"100615a80a05ac9376824961d017895088176117da95616b2ed99b1f18419cf1","summary":"结果：5/5 通过"}
+{"time":"2026-11-08T17:39:39","head":"025ed84436b18bcfff9823217874f083c992f58a","ev":"EV-01","command":"python3 scripts/selftest.py","exit":0,"output":"... | 结果：5/5 通过","output_sha256":"100615a80a05ac9376824961d017895088176117da95616b2ed99b1f18419cf1","summary":"结果：5/5 通过"}
 ```
 
 复核行只填 `EV-01`。检查器从证据行对应的 `evidence/ev-runs.log` 读取记录，重算输出 SHA-256，并核对 exit=0、记录 HEAD 等于批次被测 commit、执行时间不早于批次生成日期、账本输出摘要等于记录摘要。
