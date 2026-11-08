@@ -1,18 +1,18 @@
 {
   "schema": "verity-manifest/v1",
   "created_at": "2026-11-08",
-  "workspace_hash": "f64b7caec28ce42098cb7e1cfb79ef34930f704f1395dcbb02bbce68352d2448",
+  "workspace_hash": "ad87ce4ec316001835a41ca735fb707f7365e4edd8f85b74fe6055d511d532e6",
   "files": [
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md",
-      "sha256": "53209a273c21c620f257afb770d100adff750613f152c98239dd544a9d8dccd8",
+      "sha256": "3d1b97288d1096b3ba9cb786898df6b040b8b9b6f9eb334fa82a9d1532420d65",
       "bytes": 6595,
       "tracked": true,
       "source_command": "python3 scripts/check_evidence.py docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md"
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/README.md",
-      "sha256": "028a2dd838f06506ecf82b7e584ec85fbbf218d6674591ee3e99feb9512078a1",
+      "sha256": "f5a850f607d31b55a9a1f87c23d2fae552d00fa307fa651d31be018c292137c8",
       "bytes": 1959,
       "tracked": true,
       "source_command": "批次骨架/记录文件"
@@ -33,21 +33,21 @@
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/evidence/ev-runs.log",
-      "sha256": "c9e12ea72207a6accf566a059a578173b4b0f7621f089272df22b622a3f726d5",
+      "sha256": "44a9b64fbd3973fe534a034604494fb79d092d37ae7a899236f6b2717bc23216",
       "bytes": 437,
       "tracked": true,
       "source_command": "见 07 账本对应证据行的取证方式"
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/journey-01.md",
-      "sha256": "8793ca61f293972a636765623b9b45f100cf6306f4eca0a7c6adc56d9e7aa679",
+      "sha256": "c53d42d02b083935de7a6c5d674559a3e81ac647c368bda952024f5ff0bfe574",
       "bytes": 2597,
       "tracked": true,
       "source_command": "批次骨架/记录文件"
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/task-card.md",
-      "sha256": "13586c3bbb8af84786ff9d8af3c7f79576d4f8a6dc0cb2ba184e4416f8dcc936",
+      "sha256": "6a307cfae5bfc1b872fa34fc65265d373978274f15ad8e9bfbfa87fea95b8190",
       "bytes": 6069,
       "tracked": true,
       "source_command": "批次骨架/记录文件"
