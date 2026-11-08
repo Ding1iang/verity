@@ -3026,7 +3026,9 @@ def run_evidence_commands(
             for record in records:
                 # 同一 HEAD、同一命令、同一退出码只记一次；重复跑 gate 不应因为
                 # 追加新时间戳而让已经登记的 manifest SHA-256 失效。
-                stable = record.split(" HEAD=", 1)[1].split(" command=", 1)[0]
+                # 去重键只看 EV、退出码和命令；同一命令在不同检出 HEAD
+                # 重复执行时，保留最初一条执行记录，避免清点包被改写。
+                stable = record.split(" EV-", 1)[1].split(" output=", 1)[0]
                 if stable in existing:
                     continue
                 handle.write(record + "\n")
