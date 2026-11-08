@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""生成并运行 37 类反例，逐条断言检查器报出指定错误码。
+"""生成并运行 41 类反例，逐条断言检查器报出指定错误码。
 
 这个脚本是给 verifier 用的“反例预备清单”执行器：所有样本在临时目录里
 即时生成，不依赖仓库里的示例文件，也不写入用户数据。每个样本都故意只
@@ -8,7 +8,7 @@
 用法：
     python3 scripts/anti_examples.py
 
-退出码：0 = 37 类夹具全部按预期报错；1 = 至少一类没有报出指定错误码。
+退出码：0 = 41 类夹具全部按预期报错；1 = 至少一类没有报出指定错误码。
 """
 
 from __future__ import annotations
@@ -362,7 +362,7 @@ def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
     cases.append(
         (
             "v2-ownership-missing",
-            v2_case(root, "v2-ownership-missing", lambda text: text.replace("## 欠账", ownership + "## 欠账", 1)),
+            v2_case(root, "v2-ownership-missing", lambda text: text.replace("## 欠账", ownership + "## 欠账", 1).replace("## 证据归属\n\n本批为单代理", "## 旧归属说明\n\n本批为单代理", 1)),
             "E_EVIDENCE_OWNER",
         )
     )
@@ -500,13 +500,56 @@ def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
 | task-b | agent-2 | 2026-11-08 |
 
 """
+    def grill_three(text: str) -> str:
+        return re.sub(r"^\| [45] \|.*\n", "", text, flags=re.M)
+
+    cases.append(
+        (
+            "v2-grill-three",
+            v2_case(root, "v2-grill-three", card_mutate=grill_three),
+            "E_GRILL",
+        )
+    )
+
+    cases.append(
+        (
+            "v2-rework-conflict",
+            v2_case(root, "v2-rework-conflict", lambda text: text.replace("| 返工次数 | 0 |", "| 返工次数 | 1 |", 1)),
+            "E_REWORK",
+        )
+    )
+
+    def fake_review(text: str) -> str:
+        return re.sub(
+            r"\| `python3 [^`]+` \| README\.md \| 0 \| 命令退出 0 \|",
+            "| `echo fake` | README.md | 0 | fake |",
+            text,
+            count=1,
+        )
+
+    cases.append(
+        (
+            "v2-review-fake",
+            v2_case(root, "v2-review-fake", mutate=fake_review),
+            "E_REVIEW_COMMAND",
+        )
+    )
+
+    cases.append(
+        (
+            "v2-review-old",
+            v2_case(root, "v2-review-old", lambda text: text.replace("2026-11-08T15:00:00", "2026-11-07T15:00:00", 1)),
+            "E_REVIEW_COMMAND",
+        )
+    )
+
     cases.append(
         (
             "v2-ownership-multi-task",
             v2_case(
                 root,
                 "v2-ownership-multi-task",
-                lambda text: text.replace("## 用户旅程", ownership_table + "## 用户旅程", 1),
+                lambda text: text.replace("## 证据归属\n\n本批为单代理", "## 旧归属说明\n\n本批为单代理", 1).replace("## 用户旅程", ownership_table + "## 用户旅程", 1),
             ),
             "E_EVIDENCE_OWNER",
         )

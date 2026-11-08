@@ -15,14 +15,14 @@
 | 8 | 产物与环境身份 | done | `templates/07-acceptance.md`（证据身份段）、`scripts/check_evidence.py`（`E_ARTIFACT_*`） | `examples/04`、`05` 的证据身份表；`anti_examples.py` 的 `v2-old-build` 报 `E_ARTIFACT_BUILD` |
 | 9 | 旧证据失效 | done | `scripts/check_evidence.py`（`E_STALE`、`E_STALE_TASKCARD`、`E_ARTIFACT_BUILD`） | `anti_examples.py` 的 `stale-evidence`、`v2-old-build` 均按预期失败 |
 | 10 | 独立复核强制 | done | `templates/07-acceptance.md`（独立复核段）、`scripts/check_evidence.py`（`E_REVIEW_INDEPENDENT`、`E_REVIEW_AC`） | `anti_examples.py` 的 `v2-producer-equals-reviewer` 报 `E_REVIEW_INDEPENDENT`；`examples/04`、`05` 逐 AC supports |
-| 11 | 完成线闸门 | done | `scripts/verity.py`（`cmd_gate`、`gate_selftest`） | `python3 scripts/verity.py gate --selftest` 正负对照 PASS；`gate` 跑 examples/04、05 均 5/5 |
+| 11 | 完成线闸门 | done | `scripts/verity.py`（`cmd_gate`、`gate_selftest`） | `python3 scripts/verity.py gate --selftest` 正负对照 PASS；`gate` 跑 examples/04 为 5/5、05 为 4/4 |
 | 12 | 防绕过 | done | `scripts/verity.py`（`read_anti_bypass_policy`、`check_anti_bypass`）、`.verity/policy.json` 约定 | `gate --selftest` 的负对照：删断言、加 skip/focus、`--no-verify` 被识别；正对照干净提交不误报 |
 | 13 | 完成审计结构化 | done | `templates/07-acceptance.md`、`scripts/check_evidence.py`（`E_COMPLETION_AUDIT`、`E_COMPLETION_AC`、`E_COMPLETION_EVIDENCE`） | `anti_examples.py` 的 `v2-no-completion-audit` 报 `E_STRUCTURE`；`examples/04`、`05` 每条 AC 有完成审计行 |
 | 14 | 旅程卡强制与负路径 | done | `scripts/check_evidence.py`（`E_JOURNEY_NOT_PASSED`、`E_JOURNEY_STEP`）、`scripts/check_coverage.py`（`E_JOURNEY_CARD_MISSING`）、`scripts/verity.py init` | `anti_examples.py` 的 `v2-no-journey`、`v2-journey-not-passed` 均失败；`check_coverage.py --selftest` 9/9 含 `bad-no-journey` |
 | 15 | 阻塞举证单结构化 | done | `templates/blocking-form.md`、`scripts/check_evidence.py`（`check_blocking_form`、`E_BLOCKING_FORM`） | `anti_examples.py` 的 `v2-empty-blocking-form` 报 `E_BLOCKING_FORM`；`examples/03-blocking/blocking-form.md` 通过 |
 | 16 | 发布风险与 PR 摘要 | done | `templates/07-acceptance.md`（发布风险段）、`scripts/verity.py report --kind pr` | `examples/05-release/07` 的发布风险表；`python3 scripts/verity.py report --ledger examples/05-release/07-验收回归清单.md --kind pr` |
 | 17 | 复盘与 F 类统计 | done | `templates/07-acceptance.md`（复盘表）、`scripts/verity.py metrics` | `examples/05-release/07` 的 F1–F6 表；`python3 scripts/verity.py metrics --dir .` |
-| 18 | 红队夹具 | done | `scripts/anti_examples.py`、`docs/reviews/anti-examples.md` | `python3 scripts/anti_examples.py`：37/37 按预期报错 |
+| 18 | 红队夹具 | done | `scripts/anti_examples.py`、`docs/reviews/anti-examples.md` | `python3 scripts/anti_examples.py`：41/41 按预期报错 |
 | 19 | 技能写作 | done | `SKILL.md`、`README.md`、`references/` | `python3 scripts/package.py --check`；SKILL/README 与模板/示例计数一致 |
 | 20 | 术语表与判级校准 | done | `references/evidence.md`、`scripts/check_evidence.py`（A/B+/B/C） | `examples/04`、`05` 证据等级均为 A；`check_evidence.py` 对非法等级报 `E_EVIDENCE_LEVEL` |
 | 21 | 版本迁移与 schema | done | `scripts/verity.py upgrade`、`VERSION`、`CHANGELOG.md` | `python3 scripts/verity.py upgrade --help`；八列账本被明确拒绝，schema_version 不是 2 时报 `E_SCHEMA` |

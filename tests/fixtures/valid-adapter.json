@@ -1,0 +1,9 @@
+{
+  "schema": "verity-adapter/v1",
+  "schema_version": 1,
+  "min_verity_version": "1.3.0",
+  "project": {"name": "verity", "root": "../.."},
+  "evidence_commands": [
+    {"id": "EV-01", "command": "python3 scripts/selftest.py"}
+  ]
+}

@@ -1073,7 +1073,7 @@ def check_task_card(
             card_path = fallback
     if card_path is None:
         issues.append(Issue("E_TASKCARD", "找不到任务卡；v2 账本必须能和任务卡 AC 双向映射", None))
-        return None, [], "", ""
+        return None, [], "", "", ""
 
     text = card_path.read_text(encoding="utf-8")
     sections = split_sections(text)
@@ -1140,9 +1140,13 @@ def check_task_card(
                     decision = cell(row, len(row) - 1).strip()
                     if decision and not decision.startswith("<") and decision not in {"—", "-"}:
                         useful += 1
-            if useful < 3:
+            if not 5 <= useful <= 10:
                 issues.append(
-                    Issue("E_GRILL", "立卡前盘问至少记录 3 条已确认的问题与用户决定", grill[1])
+                    Issue(
+                        "E_GRILL",
+                        "立卡前盘问必须记录 5–10 条问题，且每条都有推荐答案和用户决定",
+                        grill[1],
+                    )
                 )
 
         spec = find_section_prefix(sections, "规格摘要")
@@ -1462,6 +1466,9 @@ def check_independent_review(
         "evidence": ("复跑证据", "证据"),
         "reviewer": ("复核人", "复核者"),
         "time": ("时间", "日期"),
+        "exitcode": ("复跑退出码", "退出码", "exit code"),
+        "output": ("复跑输出", "输出摘要", "stdout/stderr 摘要"),
+        "runtime": ("复跑时间", "执行时间"),
     }.items():
         indexes[key] = next((i for i, item in enumerate(normalized) if item in aliases), None)
     missing = [key for key, index in indexes.items() if index is None]
@@ -1502,8 +1509,28 @@ def check_independent_review(
                     number,
                 )
             )
+        batch_date = batch_values.get("生成日期", "").strip()
+        if values["runtime"] and batch_date:
+            runtime_date = values["runtime"].split("T", 1)[0].split(" ", 1)[0]
+            if V1_DATE_RE.fullmatch(runtime_date) and V1_DATE_RE.fullmatch(batch_date) and runtime_date < batch_date:
+                issues.append(Issue("E_REVIEW_COMMAND", "复跑时间早于批次生成日期，不能作为本次取证", number))
         if values["time"] and not V1_DATE_RE.fullmatch(values["time"]):
             issues.append(Issue("E_REVIEW", f"复核时间“{values['time']}”不是 YYYY-MM-DD", number))
+        if values["exitcode"] != "0":
+            issues.append(Issue("E_REVIEW_COMMAND", "复跑退出码必须是 0；没有真跑过不能写通过", number))
+        output = values["output"].strip()
+        if not output or output.startswith("<") or output in {"见", "同上", "见截图", "无输出"}:
+            issues.append(Issue("E_REVIEW_COMMAND", "复跑输出摘要不能为空或写“见/同上”", number))
+        if values["runtime"] and not re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?", values["runtime"]
+        ):
+            issues.append(Issue("E_REVIEW_COMMAND", "复跑时间应为 YYYY-MM-DD 或 ISO 时间", number))
+        command = values["command"].strip().strip("`")
+        if command and (
+            re.match(r"^(echo|true|false|printf|cat)\b", command)
+            or command.startswith("<")
+        ):
+            issues.append(Issue("E_REVIEW_COMMAND", "复跑命令不能是 echo/true 这类假命令", number))
         paths = extract_paths(values["evidence"])
         if not paths:
             issues.append(Issue("E_REVIEW", "复核行没有复跑证据路径", number))
@@ -1737,17 +1764,30 @@ def check_evidence_ownership(
     ledger_dir: Path,
     issues: list[Issue],
 ) -> None:
-    """校验多代理证据归属表；单代理批次允许写一句说明。"""
+    """校验证据归属：先读协作模式，单代理要写说明，多代理必须登记到人。"""
+    mode = batch_values.get("协作模式", "").strip()
     section = find_section_prefix(sections, "证据归属")
+    if not mode:
+        issues.append(Issue("E_EVIDENCE_OWNER", "批次信息缺少“协作模式”（单代理/多代理）"))
+    elif mode not in {"单代理", "多代理"}:
+        issues.append(Issue("E_EVIDENCE_OWNER", "协作模式只能是“单代理”或“多代理”"))
     if section is None:
+        issues.append(
+            Issue(
+                "E_EVIDENCE_OWNER",
+                "缺少“## 证据归属”段；单代理也要写明本批单代理，多代理必须给归属表",
+            )
+        )
         return
     text = "\n".join(line for _, line in section[2])
     table = parse_first_table(section[2])
     if table is None:
-        if "多代理" in text or "多 agent" in text.lower():
+        if mode == "多代理":
             issues.append(
-                Issue("E_EVIDENCE_OWNER", "多代理批次必须用表格登记 task_id/agent_id/claimed_at", section[1])
+                Issue("E_EVIDENCE_OWNER", "多代理批次必须用表格登记 task_id/agent_id/claimed_at/证据路径", section[1])
             )
+        elif "单代理" not in text:
+            issues.append(Issue("E_EVIDENCE_OWNER", "单代理批次必须明确写“本批为单代理”", section[1]))
         return
     _, header, rows = table
     normalized = [normalize_header(item) for item in header]
@@ -1756,31 +1796,74 @@ def check_evidence_ownership(
         "task": ("task_id", "task id", "任务id"),
         "agent": ("agent_id", "agent id", "代理id", "执行者"),
         "claimed": ("claimed_at", "claimed at", "领取时间"),
+        "evidence": ("证据路径", "证据", "evidence", "path"),
     }.items():
         indexes[key] = next((i for i, item in enumerate(normalized) if item in aliases), None)
-    missing = [key for key, index in indexes.items() if index is None]
+    required = ["task", "agent", "claimed"]
+    if mode == "多代理":
+        required.append("evidence")
+    missing = [key for key in required if indexes[key] is None]
     if missing:
         issues.append(Issue("E_EVIDENCE_OWNER", "证据归属表头缺列：" + "、".join(missing), section[1]))
         return
+    seen_tasks: set[str] = set()
     for number, row in rows:
-        values = {key: cell(row, index).strip() for key, index in indexes.items()}
+        values = {
+            key: (cell(row, index).strip() if index is not None and index < len(row) else "")
+            for key, index in indexes.items()
+        }
         if all(not value for value in values.values()):
             continue
-        empty = [key for key, value in values.items() if not value or value.startswith("<")]
+        empty = [key for key in required if not values[key] or values[key].startswith("<")]
         if empty:
             issues.append(Issue("E_EVIDENCE_OWNER", "证据归属行有空字段：" + "、".join(empty), number))
         if values["claimed"] and not re.fullmatch(
             r"\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?", values["claimed"]
         ):
             issues.append(Issue("E_EVIDENCE_OWNER", "claimed_at 应为 YYYY-MM-DD 或 ISO 时间", number))
-    # task_id 至少不能是占位符；多行必须归属同一个批次任务。
-    task_ids = {
-        cell(row, indexes["task"]).strip()
-        for _, row in rows
-        if cell(row, indexes["task"]).strip() and not cell(row, indexes["task"]).startswith("<")
-    }
-    if len(task_ids) > 1:
-        issues.append(Issue("E_EVIDENCE_OWNER", "同一批次的证据归属出现了多个 task_id", section[1]))
+        if values["task"]:
+            if values["task"] in seen_tasks:
+                issues.append(Issue("E_EVIDENCE_OWNER", f"task_id 重复：{values['task']}", number))
+            seen_tasks.add(values["task"])
+        if mode == "多代理" and values["evidence"]:
+            paths = extract_paths(values["evidence"])
+            if not paths:
+                issues.append(Issue("E_EVIDENCE_OWNER", "多代理归属行必须给证据路径", number))
+            for candidate in paths:
+                if resolve_existing_path(candidate, root, ledger_dir) is None:
+                    issues.append(Issue("E_EVIDENCE_OWNER", f"归属证据不存在：{candidate}", number))
+    if len(seen_tasks) > 1:
+        issues.append(Issue("E_EVIDENCE_OWNER", "同一批次出现了多个 task_id", section[1]))
+    if mode == "单代理" and not text.strip():
+        issues.append(Issue("E_EVIDENCE_OWNER", "单代理批次也要写明证据归属说明", section[1]))
+
+
+def check_rework_fields(
+    batch_values: dict[str, str], issues: list[Issue], line: Optional[int]
+) -> None:
+    """校验结构化返工字段，禁止用全文词频猜返工次数。"""
+    count_text = batch_values.get("返工次数", "").strip()
+    reason = batch_values.get("返工原因", "").strip()
+    task_id = batch_values.get("返工任务id", "").strip() or batch_values.get("返工任务 id", "").strip()
+    missing = [name for name, value in (("返工次数", count_text), ("返工原因", reason), ("返工任务 ID", task_id)) if not value]
+    if missing:
+        issues.append(Issue("E_REWORK", "批次信息缺结构化返工字段：" + "、".join(missing), line))
+        return
+    if not count_text.isdigit():
+        issues.append(Issue("E_REWORK", "返工次数必须是非负整数", line))
+        return
+    count = int(count_text)
+    empty_words = {"无", "—", "-", "无返工", "没有"}
+    if count == 0:
+        if reason not in empty_words:
+            issues.append(Issue("E_REWORK", "返工次数为 0 时，返工原因必须写“无”", line))
+        if task_id not in empty_words:
+            issues.append(Issue("E_REWORK", "返工次数为 0 时，返工任务 ID 必须写“无”", line))
+    else:
+        if reason in empty_words:
+            issues.append(Issue("E_REWORK", "返工次数大于 0 时必须写明返工原因", line))
+        if not re.fullmatch(r"t\d+[A-Za-z0-9_-]*", task_id):
+            issues.append(Issue("E_REWORK", "返工次数大于 0 时返工任务 ID 必须形如 t5", line))
 
 
 def check_blocking_form(
@@ -1899,7 +1982,10 @@ def check_v1_ledger(
                     batch_start,
                 )
             )
-        for name in ("任务卡", "被测版本", "环境", "执行者", "复核者", "收口时间", "生成日期"):
+        for name in (
+            "任务卡", "被测版本", "环境", "执行者", "复核者", "收口时间", "生成日期",
+            "协作模式", "返工次数", "返工原因", "返工任务 ID",
+        ):
             value = batch_values.get(normalize_header(name), "").strip()
             if v1_text_empty(value):
                 issues.append(Issue("E_BATCH_INFO", f"批次信息“{name}”未填写", batch_start))
@@ -1907,6 +1993,7 @@ def check_v1_ledger(
             value = batch_values.get(normalize_header(name), "").strip()
             if value and not V1_DATE_RE.fullmatch(value):
                 issues.append(Issue("E_BATCH_INFO", f"批次信息“{name}”不是 YYYY-MM-DD", batch_start))
+        check_rework_fields(batch_values, issues, batch_start)
 
     build_text = batch_values.get("被测版本", "")
     build_match = re.search(r"构建号[:：]\s*([^；;，,\s]+)", build_text)
@@ -2660,15 +2747,17 @@ def adapter_context(adapter_path: Path) -> AdapterContext:
 
     paths = data.get("paths") if isinstance(data.get("paths"), dict) else {}
     raw_template = paths.get("ledger_template")
-    fmt = "legacy"
+    # 没配置项目模板时按 v1/v2 处理：init 生成的就是带 marker 的新账本，
+    # 只有显式 --format legacy 才回退八列，避免适配层缺省值把新账本当旧账本读。
+    fmt = "v1"
     if isinstance(raw_template, str) and raw_template.strip() and not (
         raw_template.strip().startswith("<") and raw_template.strip().endswith(">")
     ):
         template = (project_root / raw_template.strip()).resolve()
         if not template.is_file():
             raise ValueError(f"适配层 paths.ledger_template 指向的模板不存在：{template}")
-        if V1_MARKER in template.read_text(encoding="utf-8"):
-            fmt = "v1"
+        if V1_MARKER not in template.read_text(encoding="utf-8"):
+            fmt = "legacy"
     return AdapterContext(project_root=project_root, format=fmt, policy=read_policy(data))
 
 
@@ -2729,7 +2818,7 @@ def _extract_clean_worktree(root: Path):
     )
     if archive.returncode == 0:
         with tarfile.open(fileobj=io.BytesIO(archive.stdout), mode="r:") as bundle:
-            bundle.extractall(target)
+            bundle.extractall(target, filter="data")
     else:
         # 非 git 项目退化为复制工作区，但仍排除版本库与构建产物。
         shutil.copytree(
@@ -2791,6 +2880,7 @@ def run_evidence_commands(
         issues.append(Issue("E_EVIDENCE_COMMAND", "账本没有引用任何 EV ID"))
         return
     temporary, worktree = _extract_clean_worktree(root)
+    records: list[str] = []
     try:
         for evidence_id in sorted(set(referenced)):
             command = commands[evidence_id]
@@ -2820,8 +2910,29 @@ def run_evidence_commands(
                 )
             else:
                 print(f"[OK] {evidence_id} 退出码 0：{command}；输出：{tail}")
+            records.append(
+                f"{datetime.now().isoformat(timespec='seconds')} "
+                f"HEAD={_git_head(root)} {evidence_id} exit={process.returncode} "
+                f"command={command} output={tail}"
+            )
     finally:
         temporary.cleanup()
+    if records:
+        evidence_dir = path.parent / "evidence"
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        with (evidence_dir / "ev-runs.log").open("a", encoding="utf-8") as handle:
+            handle.write("\n".join(records) + "\n")
+
+
+def _git_head(root: Path) -> str:
+    """取当前 HEAD；不在 git 仓库时返回 unknown。"""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, check=False
+        )
+        return result.stdout.strip() if result.returncode == 0 else "unknown"
+    except OSError:
+        return "unknown"
 
 
 def main(argv: Optional[list[str]] = None) -> int:

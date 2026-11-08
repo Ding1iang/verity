@@ -156,7 +156,7 @@ fi
 ADAPTER="$TMP/adapter.json"
 ADAPTER_DIR="$TMP/adapter"
 mkdir -p "$ADAPTER_DIR"
-printf '%s\n' '{"schema":"verity-adapter/v1","project":{"name":"演示项目"}}' >"$ADAPTER"
+printf '%s\n' '{"schema":"verity-adapter/v1","schema_version":1,"min_verity_version":"1.3.0","project":{"name":"演示项目"}}' >"$ADAPTER"
 ADAPTER_OK=1
 "$PYTHON" "$CLI" init "适配任务" --mode new-feature --dir "$ADAPTER_DIR" --adapter "$ADAPTER" >"$TMP/adapter.out" 2>"$TMP/adapter.err"
 if [ "$?" -ne 0 ]; then
@@ -183,7 +183,30 @@ else
     fail "adapter 字段带入"
 fi
 
-echo "结果：$PASS/4 通过"
+# ---------- 5. 无 ledger_template 时默认按 v2 检查 ----------
+NO_TEMPLATE="$TMP/no-template-adapter.json"
+printf '%s\n' "{\"schema\":\"verity-adapter/v1\",\"schema_version\":1,\"min_verity_version\":\"1.3.0\",\"project\":{\"name\":\"演示项目\",\"root\":\"$ROOT\"}}" >"$NO_TEMPLATE"
+"$PYTHON" "$CHECK" examples/04-project-v1/07-验收回归清单.md --adapter "$NO_TEMPLATE" >"$TMP/no-template.out" 2>&1
+NO_TEMPLATE_CODE=$?
+if [ "$NO_TEMPLATE_CODE" -eq 0 ]; then
+    pass "无 ledger_template：默认 v2，examples/04 可检查"
+else
+    fail "无 ledger_template 默认 v2"
+    sed -n '1,15p' "$TMP/no-template.out"
+fi
+
+# ---------- 6. 缺 schema_version 的 adapter 必须失败 ----------
+BAD_ADAPTER="$TMP/bad-adapter.json"
+printf '%s\n' '{"schema":"verity-adapter/v1","project":{"name":"演示项目"}}' >"$BAD_ADAPTER"
+"$PYTHON" "$CLI" init "坏适配任务" --mode new-feature --dir "$TMP/bad-adapter-dir" --adapter "$BAD_ADAPTER" >"$TMP/bad-adapter.out" 2>&1
+BAD_ADAPTER_CODE=$?
+if [ "$BAD_ADAPTER_CODE" -ne 0 ] && grep -q "schema_version" "$TMP/bad-adapter.out"; then
+    pass "缺 schema_version：init 拒绝并指出字段"
+else
+    fail "缺 schema_version 未被拒绝"
+fi
+
+echo "结果：$PASS/6 通过"
 if [ "$FAIL" -ne 0 ]; then
     exit 1
 fi

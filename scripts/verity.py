@@ -685,7 +685,7 @@ def collect_batch_files(batch_dir: Path) -> list[Path]:
     files = [
         path
         for path in batch_dir.rglob("*")
-        if path.is_file() and path.name != "manifest.json" and ".git" not in path.parts
+        if path.is_file() and path.name not in {"manifest.json", "ev-runs.log"} and ".git" not in path.parts
     ]
     return sorted(files, key=lambda item: item.as_posix())
 
@@ -1072,12 +1072,29 @@ def cmd_gate(args: argparse.Namespace) -> int:
     failures = 0
     steps: list[tuple[str, bool, str]] = []
 
+    adapter_path = Path(args.adapter).expanduser().resolve() if args.adapter else None
+    if adapter_path is None:
+        for candidate in (
+            root / ".verity" / "adapter.json",
+            root / "verity-adapter.json",
+            root / "adapter.json",
+        ):
+            if candidate.is_file():
+                adapter_path = candidate
+                break
     command = [sys.executable, str(REPO_ROOT / "scripts" / "check_evidence.py"), str(ledger), "--root", str(root)]
-    if args.adapter:
-        command.extend(["--adapter", str(Path(args.adapter).expanduser())])
+    if adapter_path is not None:
+        command.extend(["--adapter", str(adapter_path)])
+    if args.run:
+        command.append("--run")
     result = subprocess.run(command, capture_output=True, text=True, check=False)
-    steps.append(("证据账本", result.returncode == 0, (result.stdout + result.stderr).strip().splitlines()[-1] if (result.stdout + result.stderr).strip() else ""))
-    failures += 0 if result.returncode == 0 else 1
+    evidence_ok = result.returncode == 0
+    detail = (result.stdout + result.stderr).strip().splitlines()[-1] if (result.stdout + result.stderr).strip() else ""
+    if not args.run and re.search(r"EV-\d{2,3}", ledger.read_text(encoding="utf-8")):
+        evidence_ok = False
+        detail = "账本引用了 EV 证据命令，但 gate 未传 --run，命令未执行"
+    steps.append(("证据账本", evidence_ok, detail))
+    failures += 0 if evidence_ok else 1
 
     coverage = Path(args.coverage).expanduser().resolve() if args.coverage else None
     if coverage is None and args.adapter:
@@ -1320,6 +1337,7 @@ def ledger_summary(ledger: Path) -> dict:
                         if match and raw.isdigit():
                             f_counts[match.group(1)] = int(raw)
     dates: list[str] = []
+    rework = 0
     batch = find_section(sections, "批次信息")
     if batch is not None:
         values, _ = table_key_values(batch)
@@ -1327,6 +1345,9 @@ def ledger_summary(ledger: Path) -> dict:
             value = values.get(key, "").strip()
             if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
                 dates.append(value)
+        raw_rework = values.get("返工次数", "").strip()
+        if raw_rework.isdigit():
+            rework = int(raw_rework)
     return {
         "conclusion": conclusion,
         "one_line": one_line,
@@ -1338,7 +1359,7 @@ def ledger_summary(ledger: Path) -> dict:
         "review_findings": review_findings,
         "f_counts": f_counts,
         "dates": dates,
-        "rework": text.count("返工"),
+        "rework": rework,
     }
 
 
@@ -1621,6 +1642,7 @@ def build_parser() -> argparse.ArgumentParser:
     gate_parser.add_argument("--adapter", help="适配层 JSON")
     gate_parser.add_argument("--coverage", help="覆盖总表路径")
     gate_parser.add_argument("--team", action="store_true", help="启用防绕过（仅团队/高风险仓库）")
+    gate_parser.add_argument("--run", action="store_true", help="按适配层 evidence_commands 真跑证据命令并阻断失败")
     gate_parser.add_argument("--base", default="HEAD~1", help="防绕过策略与 diff 的基线，默认 HEAD~1")
     gate_parser.add_argument("--release", action="store_true", help="发布模式：额外跑安全/脱敏扫描")
     gate_parser.add_argument("--selftest", action="store_true", help="跑防绕过正负对照后退出")

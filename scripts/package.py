@@ -55,6 +55,8 @@ EXCLUDED_RELATIVE_PATTERNS = (
     "docs/2026-*外部工作流对比与优化清单.md",
     "docs/reviews/32-item-review.md",
     "docs/reviews/32-item-verification.md",
+    "docs/reviews/32-item-review-round2.md",
+    "tests/fixtures/*",
     "docs/reviews/2026-11-06-independent-review.md",
     ".github/ISSUE_TEMPLATE/*",
     "SECURITY.md",
