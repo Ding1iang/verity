@@ -1,78 +1,124 @@
-# verity 自验收证据日志
+# verity v1.3.0 自验收验证日志
 
-- 取证时间：2026-11-08T15:45:00+08:00
-- 取证提交：94d9cc28b0bd99e22e6e716aa1510080a9a2bba9
-- 环境：macOS / Python 3.13 标准库 / git
-- 工作区：证据提交所在分支，取证后由最终提交固化；干净克隆复验见第 4 节。
+- 日期：2026-11-08
+- 代码 HEAD：f020d7aa580175dc6b2a47c33fd48f10a8f04bb6
+- 路径约定：以下命令均在仓库根执行，输出中的仓库根已用 `<repo>` 表示；不含机器绝对路径。
+- 说明：本日志只记录实际执行过的命令与读数；失败演示单独标注，不混入通过结论。
 
-## 1. 八条 verify
+## 1. 八条 verify（全部 exit 0）
 
+```text
 $ python3 scripts/selftest.py
 结果：5/5 通过
-exit=0
 
 $ python3 scripts/anti_examples.py
-结果：41/41 夹具按预期
-exit=0
+结果：42/42 夹具按预期
 
 $ python3 scripts/check_coverage.py --selftest
 结果：9/9 通过
-exit=0
 
 $ python3 -m py_compile scripts/*.py
-exit=0
+（无输出，退出码 0）
 
 $ python3 scripts/check_evidence.py examples/04-project-v1/07-验收回归清单.md
-[OK] examples/04-project-v1/07-验收回归清单.md：1 行，结论=通过（通过 1）
-exit=0
+[OK] <repo>/examples/04-project-v1/07-验收回归清单.md：1 行，结论=通过（通过 1）
 
 $ python3 scripts/check_evidence.py examples/05-release/07-验收回归清单.md
-[OK] examples/05-release/07-验收回归清单.md：5 行，结论=通过（通过 5）
-exit=0
+[OK] <repo>/examples/05-release/07-验收回归清单.md：5 行，结论=通过（通过 5）
 
 $ python3 scripts/package.py --check
 文件数：60 / 60
-总大小：583.0 KB / 10.0 MB
-exit=0
+总大小：592.7 KB / 10.0 MB
+检查通过（--check 模式，未生成 zip）
+
+$ python3 scripts/package.py --check --max-files 60
+文件数：60 / 60
+总大小：592.7 KB / 10.0 MB
+检查通过（--check 模式，未生成 zip）
 
 $ git diff --check
-exit=0
+（无输出，退出码 0）
+```
 
-## 2. init、反例与门禁自测
+## 2. 初始化与适配层
 
+```text
 $ bash tests/init-selftest.sh
 结果：6/6 通过
-exit=0
 
-$ python3 scripts/verity.py gate --selftest
-[PASS] 删断言/加 skip 被识别
-[PASS] 未声明未跟踪文件被范围锁拦住
-[PASS] 已跟踪文件越界被范围锁拦住
-[PASS] scope_exception 放行
-[PASS] 伪造 manifest.workspace_hash 被识别
-[PASS] 过新的 adapter.schema_version 被拒绝
-exit=0
+$ python3 scripts/verity.py doctor --root . --adapter tests/fixtures/valid-adapter.json
+[OK] 证据命令：0 条 commands，1 条 evidence_commands
+[OK] 文档计数：一致
+结果：10/10 项通过
+```
 
+## 3. 完成线 gate
+
+```text
 $ python3 scripts/verity.py gate --root . --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md --release
+[PASS] 证据账本
+[PASS] 覆盖总表：未配置（跳过）
+[PASS] 证据包清单
+[PASS] 范围锁
+[PASS] 防绕过：未启用（跳过）
+[PASS] 安全脱敏
 结果：通过（6/6）
-exit=0
 
-## 3. 证据命令与报告
+$ python3 scripts/verity.py gate --root . --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md --team --release
+结果：通过（6/6）
 
-$ python3 scripts/verity.py gate --root . --ledger examples/04-project-v1/07-验收回归清单.md
-[FAIL] 证据账本：账本引用了 EV 证据命令，但 gate 未传 --run，命令未执行
-exit=1（预期非 0：证明 gate 不会在不执行命令时放行）
+$ python3 scripts/verity.py gate --root . --ledger examples/04-project-v1/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run
+[PASS] 证据账本
+[PASS] 覆盖总表：未配置（跳过）
+[PASS] 证据包清单：6 个文件
+[PASS] 范围锁
+[PASS] 防绕过：未启用（跳过）
+结果：通过（5/5）
 
-$ python3 scripts/verity.py report --ledger examples/05-release/07-验收回归清单.md --kind pr
-- 结论：通过；旅程：通过；验收项：5 条
-- 证据：README.md
-- 风险：最终用户的条目列表入口；不涉及数据迁移；回滚：上一可用标签 v0.9.0；验证：是；回滚演练记录见 README.md
-exit=0
+$ python3 scripts/verity.py gate --root . --ledger examples/05-release/07-验收回归清单.md
+[PASS] 证据账本
+[PASS] 覆盖总表：未配置（跳过）
+[PASS] 证据包清单：未配置（跳过）
+[PASS] 范围锁
+[PASS] 防绕过：未启用（跳过）
+结果：通过（5/5）
+```
 
-$ python3 scripts/verity.py scan --root .
-verity scan：83 个文件，命中 0 项
-exit=0
+## 4. 证据包
 
-## 4. 干净克隆复验
+```text
+$ python3 scripts/verity.py manifest --root . --ledger examples/04-project-v1/07-验收回归清单.md --check
+[OK] 证据包清单一致：6 个文件
 
-在最终提交的干净克隆中重跑：selftest 5/5、anti_examples 41/41、check_coverage --selftest 9/9、init-selftest 6/6、examples/04 与 05 均 exit 0、package 60/60、gate 自验收 6/6。日志中所有路径均为仓库相对路径。
+$ python3 scripts/verity.py manifest --root . --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md --check
+[OK] 证据包清单一致：6 个文件
+
+$ python3 scripts/verity.py gate --run ...（不带 --adapter，负向演示）
+[FAIL] 证据账本：启用 --run 时必须提供适配层 evidence_commands
+退出码 1
+```
+
+`examples/04-project-v1/evidence/ev-runs.log` 记录 EV-01 的执行时间、HEAD、退出码和输出摘要，并已纳入 07 证据行和 manifest。
+
+## 5. 负向夹具（节选）
+
+```text
+$ python3 scripts/anti_examples.py
+[PASS] v2-ascii-image: E_SCREENSHOT
+[PASS] v2-workspace-forged: E_WORKSPACE_CHANGED
+[PASS] v2-review-fake: E_REVIEW_COMMAND
+[PASS] v2-review-inline-fake: E_REVIEW_COMMAND
+[PASS] v2-grill-three: E_GRILL
+[PASS] v2-rework-conflict: E_REWORK
+结果：42/42 夹具按预期
+```
+
+## 6. 干净克隆复验
+
+在 `git clone` 的干净检出（同一 HEAD，`git status` 无改动）中重跑：
+
+- 八条 verify 全部 exit 0：selftest 5/5、anti 42/42、coverage 9/9、examples/04 与 05 均通过、package 60/60。
+- `bash tests/init-selftest.sh`：6/6。
+- `doctor`：10/10。
+- 自验收 gate `--release` 与 `--team --release`：6/6。
+- examples/04 gate（带适配层与 `--run`）：5/5；examples/05 gate：5/5。

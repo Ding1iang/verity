@@ -1,1 +1,1 @@
-2026-11-08T16:35:22 HEAD=61702b84c68297fa425337ea87e3647532a9b417 EV-01 exit=0 command=python3 scripts/selftest.py output=[PASS] 坏样本·旧结论词：退出 1，命中 E_OLD_WORD | [PASS] 坏样本·重复状态源：退出 1，命中 E_DUP_SOURCE | 结果：5/5 通过
+2026-11-08T16:40:04 HEAD=f020d7aa580175dc6b2a47c33fd48f10a8f04bb6 EV-01 exit=0 command=python3 scripts/selftest.py output=[PASS] 坏样本·旧结论词：退出 1，命中 E_OLD_WORD | [PASS] 坏样本·重复状态源：退出 1，命中 E_DUP_SOURCE | 结果：5/5 通过
