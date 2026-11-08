@@ -1,11 +1,11 @@
 {
   "schema": "verity-manifest/v1",
   "created_at": "2026-11-08",
-  "workspace_hash": "1ce85c31ceae9aa83f9eec0752e39bdcdb98daa57487e42efc1a43ba8376a78b",
+  "workspace_hash": "a9910a44e13eb2f3b75830b0e7214d042c06023123b1067301300b7b85030fdc",
   "files": [
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md",
-      "sha256": "6fa6378b7e8706eb7e727e97d36730481b5fc98b63f25e43c7bd73211e1f67da",
+      "sha256": "2f9dd3403e726a4b85b64653fc7e6938e291240629c201805897bbfbe035df29",
       "bytes": 5693,
       "tracked": true,
       "source_command": "python3 scripts/check_evidence.py docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md"
