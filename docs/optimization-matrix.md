@@ -32,7 +32,7 @@
 | 25 | 安全与脱敏扫描 | done | `scripts/verity.py scan`（默认 warning，`--release` 阻断） | `python3 scripts/verity.py scan --root .`；`--release` 对命中项返回非 0 |
 | 26 | 专项证据结构化 | done | `templates/07-acceptance.md`（结构化读数列）、`scripts/check_evidence.py`（viewport/pixel_hash/runs/median/before/after） | `examples/04`、`05` 证据身份；`anti_examples.py` 的 `v2-duplicate-screenshot` 验证截图身份 |
 | 27 | 交接摘要 | done | `scripts/verity.py report --kind handoff` | `python3 scripts/verity.py report --ledger examples/05-release/07-验收回归清单.md --kind handoff` |
-| 28 | 修缺陷的紧反馈回路 | done | `references/bug-fix.md`（2.8 紧反馈回路）、`scripts/verity.py gate` | 自验收日志复跑 `check_evidence.py examples/02-bug-fix/07-验收回归清单.md`；失败样本 `examples/04/bad-fake-screenshot` 只报一个目标错误 |
+| 28 | 修缺陷的紧反馈回路 | done | `references/bug-fix.md`（2.8 紧反馈回路）、`scripts/verity.py gate` | `python3 scripts/anti_examples.py` 的 `fake-screenshot` 夹具报 `E_SCREENSHOT`；`gate --selftest` 的正负对照证明失败样本能秒级变红 |
 | 29 | 自验收（先拿 verity 验 verity） | done | `docs/reviews/2026-11-08-self-acceptance/` | 该目录的 07、证据身份、完成审计、独立复核与 manifest |
 | 30 | 取证通道正对照预检 | done | `scripts/verity.py doctor`（`evidence_channels`） | `python3 scripts/verity.py doctor --root .` 输出取证通道正对照；缺失通道按可选处理 |
 | 31 | 两层汇报：先人话，后证据 | done | `scripts/verity.py report --kind two-layer`、`SKILL.md` 输出格式 | `python3 scripts/verity.py report --ledger examples/05-release/07-验收回归清单.md --kind two-layer` |
