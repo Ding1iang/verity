@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""生成并运行 11 类反例，逐条断言检查器报出指定错误码。
+"""生成并运行 37 类反例，逐条断言检查器报出指定错误码。
 
 这个脚本是给 verifier 用的“反例预备清单”执行器：所有样本在临时目录里
 即时生成，不依赖仓库里的示例文件，也不写入用户数据。每个样本都故意只
@@ -8,12 +8,14 @@
 用法：
     python3 scripts/anti_examples.py
 
-退出码：0 = 11 类反例全部按预期报错；1 = 至少一类没有报出指定错误码。
+退出码：0 = 37 类夹具全部按预期报错；1 = 至少一类没有报出指定错误码。
 """
 
 from __future__ import annotations
 
 import os
+import json
+import base64
 import hashlib
 import re
 import shutil
@@ -142,6 +144,17 @@ def init_git_fixture(root: Path) -> str:
     ).stdout.strip()
 
 
+def check_evidence_module():
+    """按文件路径加载检查器，供夹具复用工作区指纹算法。"""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("verity_check_evidence_anti", CHECKER)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def run_checker(ledger: Path, root: Path) -> tuple[int, str]:
     """调用检查器，合并 stdout/stderr，便于断言具体错误码。"""
     process = subprocess.run(
@@ -165,19 +178,48 @@ def run_checker(ledger: Path, root: Path) -> tuple[int, str]:
 V2_BASE = REPO_ROOT / "examples" / "05-release"
 
 
-def v2_case(root: Path, name: str, mutate=None, extra: dict[str, str] | None = None) -> Path:
+def v2_case(
+    root: Path,
+    name: str,
+    mutate=None,
+    extra: dict[str, str] | None = None,
+    card_mutate=None,
+    journey_mutate=None,
+) -> Path:
     """以合规的 v2 批次为底，只改一处，确保反例失败是因为目标规则而不是缺段。"""
     case_dir = root / name
     case_dir.mkdir(parents=True, exist_ok=True)
     for filename in ("task-card.md", "journey-01.md", "README.md"):
         shutil.copyfile(V2_BASE / filename, case_dir / filename)
+    if card_mutate is not None:
+        card = card_mutate((case_dir / "task-card.md").read_text(encoding="utf-8"))
+        (case_dir / "task-card.md").write_text(card, encoding="utf-8")
+    if journey_mutate is not None:
+        journey = journey_mutate((case_dir / "journey-01.md").read_text(encoding="utf-8"))
+        (case_dir / "journey-01.md").write_text(journey, encoding="utf-8")
     text = (V2_BASE / "07-验收回归清单.md").read_text(encoding="utf-8")
-    if mutate is not None:
-        text = mutate(text)
     ledger = case_dir / "07-验收回归清单.md"
     ledger.write_text(text, encoding="utf-8")
+    # v2 账本必须绑定真实 commit：给每个夹具建一个只含本批次的临时 git 仓库。
+    subprocess.run(["git", "init", "-q"], cwd=case_dir, check=False)
+    subprocess.run(["git", "config", "user.email", "anti@example.invalid"], cwd=case_dir, check=False)
+    subprocess.run(["git", "config", "user.name", "anti"], cwd=case_dir, check=False)
+    subprocess.run(["git", "add", "-A"], cwd=case_dir, check=False)
+    subprocess.run(["git", "commit", "-qm", "fixture"], cwd=case_dir, check=False)
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=case_dir, capture_output=True, text=True, check=False).stdout.strip()
+    text = re.sub(r"\b[0-9a-f]{40}\b", commit, text)
     for filename, content in (extra or {}).items():
-        (case_dir / filename).write_text(content, encoding="utf-8")
+        path = case_dir / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    # 夹具不在 git 仓库里，按目录内容重算一次工作区指纹，保证底样合规；
+    # 需要伪造哈希的反例在 mutate 里再覆盖掉。
+    fingerprint = check_evidence_module().workspace_fingerprint(case_dir, case_dir)
+    if fingerprint:
+        text = re.sub(r"\| [0-9a-f]{64} \| (—|viewport)", lambda m: f"| {fingerprint} | {m.group(1)}", text, count=1)
+    if mutate is not None:
+        text = mutate(text)
+    ledger.write_text(text, encoding="utf-8")
     return ledger
 
 
@@ -253,7 +295,12 @@ def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
 """
 
     def blocked(text: str) -> str:
-        text = text.replace("| REL-05 | AC-05 | J-01 / 步骤 5 | 主路径和错误路径各一次，结果已记录 | 日志 | README.md | A | 示例执行者 | 示例复核者（独立） | 高 | 2026-11-08 | 工作区 | 通过 |", "| REL-05 | AC-05 | J-01 / 步骤 5 | 主路径和错误路径各一次，结果已记录 | 日志 | README.md | A | 示例执行者 | 示例复核者（独立） | 高 | 2026-11-08 | 工作区 | 未交付-阻塞 |", 1)
+        text = re.sub(
+            r"(\| REL-05 \|[^\n]*\| )通过( \|)",
+            r"\1未交付-阻塞\2",
+            text,
+            count=1,
+        )
         return text.replace("- 交付结论：通过", "- 交付结论：未交付（阻塞）", 1)
 
     cases.append(("v2-empty-blocking-form", v2_case(root, "v2-empty-blocking-form", blocked, {"blocking-form.md": empty_form}), "E_BLOCKING_FORM"))
@@ -261,12 +308,12 @@ def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
     def duplicate_screenshot(text: str, *, sha: str, size: int) -> str:
         text = text.replace("| REL-04 | AC-04 | J-01 / 步骤 4 | 上一可用版本、恢复步骤和恢复后冒烟检查齐全 | 日志 | README.md |", "| REL-04 | AC-04 | J-01 / 步骤 4 | 上一可用版本、恢复步骤和恢复后冒烟检查齐全 | 截图 | shot.png |", 1)
         text = text.replace("| REL-05 | AC-05 | J-01 / 步骤 5 | 主路径和错误路径各一次，结果已记录 | 日志 | README.md |", "| REL-05 | AC-05 | J-01 / 步骤 5 | 主路径和错误路径各一次，结果已记录 | 截图 | shot.png |", 1)
-        identity = f"| shot.png | {sha} | {size} | example-05-build | 示例项目 / 单机 / Python 3.9+ | 2026-11-08 | 83df5b9c8f2ee3816149f37918b108d7991f0f571efd1d9495adf6cbcc5cbae6 | viewport=390x844；pixel_hash={'a' * 64} |\n"
-        return text.replace("| README.md | 2df74429", identity + "| README.md | 2df74429", 1)
+        identity = f"| shot.png | {sha} | {size} | example-05-build | 示例项目 / 单机 / Python 3.9+ | 2026-11-08 | {'0' * 64} | viewport=390x844；pixel_hash={'a' * 64} |"
+        return text.replace("\n\n## 完成审计", "\n" + identity + "\n\n## 完成审计", 1)
 
     shot = root / "v2-duplicate-screenshot" / "shot.png"
     shot.parent.mkdir(parents=True, exist_ok=True)
-    shot.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)
+    shot.write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="))
     sha = hashlib.sha256(shot.read_bytes()).hexdigest()
     screenshot_ledger = v2_case(root, "v2-duplicate-screenshot", lambda text: duplicate_screenshot(text, sha=sha, size=shot.stat().st_size))
     (screenshot_ledger.parent / "shot.png").write_bytes(shot.read_bytes())
@@ -275,6 +322,195 @@ def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
     cases.append(("v2-old-build", v2_case(root, "v2-old-build", lambda text: text.replace("| example-05-build | 示例项目", "| example-04-build | 示例项目", 1)), "E_ARTIFACT_BUILD"))
     cases.append(("v2-missing-evidence-path", v2_case(root, "v2-missing-evidence-path", lambda text: text.replace("| REL-03 | AC-03 | J-01 / 步骤 3 | 干净检出构建成功，产物 SHA-256 已记录 | 日志 | README.md |", "| REL-03 | AC-03 | J-01 / 步骤 3 | 干净检出构建成功，产物 SHA-256 已记录 | 日志 | evidence/missing.log |", 1)), "E_EVIDENCE_PATH"))
     cases.append(("v2-fake-evidence", v2_case(root, "v2-fake-evidence", lambda text: text.replace("| REL-03 | AC-03 | J-01 / 步骤 3 | 干净检出构建成功，产物 SHA-256 已记录 | 日志 | README.md |", "| REL-03 | AC-03 | J-01 / 步骤 3 | 干净检出构建成功，产物 SHA-256 已记录 | 日志 | todo.log |", 1), {"todo.log": "TODO\n"}), "E_FAKE_EVIDENCE"))
+
+    ascii_dir = root / "v2-ascii-image"
+    ascii_dir.mkdir(parents=True, exist_ok=True)
+    ascii_shot = ascii_dir / "shot.png"
+    ascii_shot.write_bytes(b"not a real image, just ascii text\n")
+    ascii_sha = hashlib.sha256(ascii_shot.read_bytes()).hexdigest()
+    ascii_identity = (
+        f"| shot.png | {ascii_sha} | {ascii_shot.stat().st_size} | example-05-build | "
+        "示例项目 / 单机 / Python 3.9+ | 2026-11-08 | "
+        f"{'0' * 64} | viewport=390x844；pixel_hash={'a' * 64} |\n"
+    )
+
+    def ascii_image(text: str) -> str:
+        text = text.replace(
+            "| REL-04 | AC-04 | J-01 / 步骤 4 | 上一可用版本、恢复步骤和恢复后冒烟检查齐全 | 日志 | README.md |",
+            "| REL-04 | AC-04 | J-01 / 步骤 4 | 上一可用版本、恢复步骤和恢复后冒烟检查齐全 | 截图 | shot.png |",
+            1,
+        )
+        return text.replace("\n\n## 完成审计", "\n" + ascii_identity + "\n\n## 完成审计", 1)
+
+    cases.append(("v2-ascii-image", v2_case(root, "v2-ascii-image", ascii_image), "E_SCREENSHOT"))
+
+    cases.append(
+        (
+            "v2-workspace-forged",
+            v2_case(root, "v2-workspace-forged", lambda text: re.sub(r"\| [0-9a-f]{64} \| — \|", "| " + "0" * 64 + " | — |", text, count=1)),
+            "E_WORKSPACE_CHANGED",
+        )
+    )
+
+    ownership = """## 证据归属（多代理批次填写）
+
+| 验收项 ID | task_id | agent_id | claimed_at |
+|---|---|---|---|
+| REL-01 | t1 |  | 2026-11-08T10:00:00 |
+
+"""
+    cases.append(
+        (
+            "v2-ownership-missing",
+            v2_case(root, "v2-ownership-missing", lambda text: text.replace("## 欠账", ownership + "## 欠账", 1)),
+            "E_EVIDENCE_OWNER",
+        )
+    )
+
+    cases.append(
+        (
+            "v2-task-lane",
+            v2_case(
+                root,
+                "v2-task-lane",
+                card_mutate=lambda text: text.replace("| 车道 | 全流程 |", "| 车道 | 轻验收 |", 1),
+            ),
+            "E_TASK_LANE",
+        )
+    )
+
+    cases.append(
+        (
+            "v2-criterion",
+            v2_case(
+                root,
+                "v2-criterion",
+                card_mutate=lambda text: text.replace(
+                    "| AC-01 | 给定 07 账本，读取包结论应得到“通过”，且没有未通过或阻塞行 |",
+                    "| AC-01 | 功能可用 |",
+                    1,
+                ),
+            ),
+            "E_CRITERION",
+        )
+    )
+
+    cases.append(
+        (
+            "v2-commit-workspace",
+            v2_case(
+                root,
+                "v2-commit-workspace",
+                lambda text: re.sub(r"\| 2026-11-08 \| [^|]+ \| 通过 \|", "| 2026-11-08 | 工作区 | 通过 |", text, count=1),
+            ),
+            "E_COMMIT",
+        )
+    )
+
+    def one_step(text: str) -> str:
+        lines = [line for line in text.splitlines() if line.startswith("| 1 |") or line.startswith("| 2 |") or line.startswith("| 3 |") or line.startswith("| 4 |") or line.startswith("| 5 |")]
+        for line in lines[1:]:
+            text = text.replace(line + "\n", "")
+        return text
+
+    cases.append(
+        (
+            "v2-journey-one-step",
+            v2_case(root, "v2-journey-one-step", journey_mutate=one_step),
+            "E_JOURNEY_STEP",
+        )
+    )
+
+    def one_invariant(text: str) -> str:
+        # 把所有步骤的“跨区域不变量”列都改成同一条，整卡只剩 1 条不变量。
+        lines = []
+        for line in text.splitlines():
+            if re.match(r"\| [1-5] \|", line):
+                cells = line.split("|")
+                cells[4] = " 同一条不变量 "
+                line = "|".join(cells)
+            lines.append(line)
+        return "\n".join(lines)
+
+    cases.append(
+        (
+            "v2-journey-one-invariant",
+            v2_case(root, "v2-journey-one-invariant", journey_mutate=one_invariant),
+            "E_JOURNEY_INVARIANT",
+        )
+    )
+
+    cases.append(
+        (
+            "v2-journey-region-count",
+            v2_case(
+                root,
+                "v2-journey-region-count",
+                card_mutate=lambda text: text.replace("| 硬触发 | 发布、不可逆、跨模块 |", "| 硬触发 | 发布、不可逆、跨模块、跨区域 |", 1),
+            ),
+            "E_JOURNEY_REGION",
+        )
+    )
+
+    def eight_steps(text: str) -> str:
+        extra = (
+            "| 6 | 重复检查一 | 结果一致 | 不变量六 | README.md |\n"
+            "| 7 | 重复检查二 | 结果一致 | 不变量七 | README.md |\n"
+            "| 8 | 重复检查三 | 结果一致 | 不变量八 | README.md |\n"
+        )
+        return text.replace("\n\n## 结束状态", "\n" + extra + "\n## 结束状态", 1)
+
+    cases.append(
+        (
+            "v2-journey-eight-step",
+            v2_case(root, "v2-journey-eight-step", journey_mutate=eight_steps),
+            "E_JOURNEY_STEP",
+        )
+    )
+
+    cases.append(
+        (
+            "v2-journey-high-risk-no-negative",
+            v2_case(
+                root,
+                "v2-journey-high-risk-no-negative",
+                journey_mutate=lambda text: drop_section(text, "异常、空、错误分支"),
+            ),
+            "E_JOURNEY_NEGATIVE",
+        )
+    )
+
+    cases.append(
+        (
+            "v2-ownership-multi-missing",
+            v2_case(
+                root,
+                "v2-ownership-multi-missing",
+                lambda text: text.replace("## 用户旅程", "## 证据归属\n\n本批为多代理协作，没有登记表。\n\n## 用户旅程", 1),
+            ),
+            "E_EVIDENCE_OWNER",
+        )
+    )
+
+    ownership_table = """## 证据归属
+
+| task_id | agent_id | claimed_at |
+|---|---|---|
+| task-a | agent-1 | 2026-11-08 |
+| task-b | agent-2 | 2026-11-08 |
+
+"""
+    cases.append(
+        (
+            "v2-ownership-multi-task",
+            v2_case(
+                root,
+                "v2-ownership-multi-task",
+                lambda text: text.replace("## 用户旅程", ownership_table + "## 用户旅程", 1),
+            ),
+            "E_EVIDENCE_OWNER",
+        )
+    )
     return cases
 
 
@@ -333,7 +569,10 @@ def main() -> int:
         all_cases = cases + run_v2_cases(root)
         for name, ledger, expected in all_cases:
             total += 1
-            code, output = run_checker(ledger, old_root if name == "stale-evidence" else root)
+            code, output = run_checker(
+                ledger,
+                old_root if name == "stale-evidence" else (ledger.parent if name.startswith("v2-") else root),
+            )
             if code != 0 and expected in output:
                 passed += 1
                 print(f"[PASS] {name}: {expected}")
@@ -342,7 +581,50 @@ def main() -> int:
                 print(f"[FAIL] {name}: 期望 {expected}，退出码 {code}")
                 print(output.rstrip())
 
-    print(f"结果：{passed}/{total} 反例按预期报错")
+        # 证据命令执行链三夹具：成功、非零退出、未登记命令。
+        module = check_evidence_module()
+        command_root = root / "command-cases"
+        command_root.mkdir()
+        (command_root / "README.md").write_text("command fixture\n", encoding="utf-8")
+        header = (
+            "| 验收项 ID | 覆盖 AC | 用户路径 | 预期 | 证据类型 | 证据 | 证据等级 |"
+            " 产出者 | 复核者 | 置信度 | 时间 | commit | 状态 |\n"
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
+        )
+        command_ledger = command_root / "07-验收回归清单.md"
+
+        def run_command(evidence: str, command: str) -> tuple[int, str]:
+            command_ledger.write_text(
+                "# 证据命令夹具\n\n## 单项验收（证据账本）\n\n"
+                + header
+                + f"| CMD-01 | AC-01 | J-01 / 步骤 1 | 命令退出 0 | 日志 | {evidence} | A | a | b | 高 | 2026-11-08 | 0752f36 | 通过 |\n",
+                encoding="utf-8",
+            )
+            adapter = command_root / "adapter.json"
+            adapter.write_text(
+                json.dumps({"evidence_commands": [{"id": "EV-01", "command": command}]}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            issues: list = []
+            module.run_evidence_commands(command_ledger, command_root, adapter, issues, timeout=30)
+            return len(issues), "\n".join(issue.message for issue in issues)
+
+        for name, evidence, command, expected_fail in (
+            ("command-success", "README.md（EV-01）", "python3 -c \"print('ok')\"", False),
+            ("command-failed", "README.md（EV-01）", "python3 -c \"import sys; sys.exit(3)\"", True),
+            ("command-not-whitelisted", "README.md（EV-99）", "python3 -c \"print('ok')\"", True),
+        ):
+            total += 1
+            count, detail = run_command(evidence, command)
+            ok = (count > 0) if expected_fail else (count == 0)
+            if ok:
+                passed += 1
+                print(f"[PASS] {name}: {'E_EVIDENCE_COMMAND' if expected_fail else '退出码 0'}")
+            else:
+                failures.append(name)
+                print(f"[FAIL] {name}: issues={count} {detail}")
+
+    print(f"结果：{passed}/{total} 夹具按预期")
     return 0 if passed == total else 1
 
 

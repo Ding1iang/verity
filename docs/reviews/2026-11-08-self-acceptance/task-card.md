@@ -6,6 +6,7 @@
 |---|---|
 | 任务编号 | verity-self-acceptance-1.3.0 |
 | 任务卡版本 | v2 |
+| schema_version | 2 |
 | 平台 | 本机 macOS；Python 3 标准库；git 工作区 |
 | 产物 SHA-256 | 以 `manifest.json` 记录为准 |
 | 执行者 | builder |
@@ -38,7 +39,7 @@
 | 目标 | 把 32 项优化落到规则、模板、检查器、门禁、夹具、文档和自验收，形成 v1.3.0 |
 | 范围外 | 不实现清单“不抄”的整套技能包、强制 issue tracker、每任务 worktree、七节 spec、ZK/FHE、JSON-only 门禁、独立 goal-setter、rebar、Java/Spring 绑定、teach/prototype 清单 |
 | 关键决定 | v1 schema 2 十三列；十段必需结构；证据身份 SHA-256；独立复核逐 AC；gate 本地入口；分析文档不进发布包 |
-| 验收方向 | 以 8 条 verify 命令、21 个反例、examples/04 与 05、init 自测和矩阵 32 行为准 |
+| 验收方向 | 以 8 条 verify 命令、37 个反例、examples/04 与 05、init 自测和矩阵 32 行为准 |
 
 ## 目标
 
@@ -82,11 +83,11 @@
 
 1. 空模板 init 后：生成 journey-01，旅程结论为未覆盖。
 2. v2 合规账本：examples/04、05 均 exit 0。
-3. 负向夹具：21/21 按目标错误码报错。
+3. 负向夹具：37/37 按目标错误码报错。
 4. 覆盖自测：9/9 通过，缺旅程批次被拦。
 5. 完成线 gate：examples/04、05 均 5/5；反绕过正负对照通过。
 6. 打包：文件数与体积在 70 / 10 MB 内。
-7. 文档：版本、十三列、六模板、四条硬规则、21 类反例一致。
+7. 文档：版本、十三列、六模板、四条硬规则、37 类反例一致。
 
 ## 用户旅程
 
@@ -99,9 +100,9 @@
 | AC-01 | 给定 v2 合规账本，check_evidence 应 exit 0；给定缺旅程/旅程未通过/缺完成审计/AC 未映射/同人复核/空举证/重复截图/旧构建/缺路径/伪证据，应非 0 且命中对应错误码 | J-01 / 步骤 2 | A | 运行 anti_examples 与 examples 04/05 |
 | AC-02 | 给定空目录运行 init，应生成 journey-01.md，且 07 与旅程卡都不预填“通过” | J-01 / 步骤 1 | A | 运行 init 自测并读生成文件 |
 | AC-03 | 给定 examples/04 或 05，gate 应 5/5 通过；给定坏提交，anti-bypass 应报红 | J-01 / 步骤 3 | A | 运行 gate --selftest 与两次 gate |
-| AC-04 | 给定 manifest --write 后再 --check，应报告文件数与 SHA-256 一致 | J-01 / 步骤 2 | A | 运行 manifest --write / --check |
-| AC-05 | 给定 8 条 verify 命令，应全部 exit 0，且 selftest 5/5、anti 21/21、coverage 9/9 | J-01 / 步骤 3 | A | 运行 verify 命令并保存日志 |
-| AC-06 | 给定 SKILL/README/references/templates/scripts，版本 1.3.0、schema 2 十三列、六模板、四条硬规则、21 类反例应一致 | J-01 / 步骤 3 | A | grep 计数与 package --check |
+| AC-04 | 运行 manifest --write 后再 --check，核对输出应报告 6 个文件且 SHA-256 一致 | J-01 / 步骤 2 | A | 运行 manifest --write / --check |
+| AC-05 | 运行 8 条 verify 命令，应全部 exit 0，且 selftest 5/5、anti 23/23、coverage 9/9 | J-01 / 步骤 3 | A | 运行 verify 命令并保存日志 |
+| AC-06 | 检查 SKILL/README/references/templates/scripts，版本 1.3.0、schema 2 十三列、六模板、四条硬规则、37 类反例应一致 | J-01 / 步骤 3 | A | grep 计数与 package --check |
 
 ## 覆盖总表对齐
 

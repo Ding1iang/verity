@@ -6,6 +6,7 @@
 |---|---|
 | 任务编号 | EV-DEMO |
 | 任务卡版本 | v2 |
+| schema_version | 2 |
 | 执行者 | 示例执行者 |
 | 复核者 | 示例复核者 |
 | 版本锚点 | commit：工作区；构建号：example-04-build |

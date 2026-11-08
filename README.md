@@ -4,7 +4,7 @@
 
 verity 用任务卡先定靶，用证据分级判断结论能不能成立。v1 默认模板（schema 2）用十三列账本和三种包结论：通过、未交付（失败）、未交付（阻塞）；检查器默认拒绝“带欠账/带欠账交付”，读取历史账本时用 `--compat-debt` 显式放行；`--strict` 仍可叠加卡口。旧八列账本保留通过、未通过、阻塞三态。核心只有一句：**结论只能比证据小。**
 
-从 1.3.0 起，32 项工作流优化全部落到规则、模板、检查器和门禁：任务卡先判快慢车道并锁范围，账本强制旅程、完成审计和独立复核，证据绑定产物身份与 SHA-256，`verity.py gate` 成为本地完成线，`anti_examples.py` 用 21 个反例证明门禁会报红。
+从 1.3.0 起，32 项工作流优化全部落到规则、模板、检查器和门禁：任务卡先判快慢车道并锁范围，账本强制旅程、完成审计和独立复核，证据绑定产物身份与 SHA-256，`verity.py gate` 成为本地完成线，`anti_examples.py` 用 37 个反例证明门禁会报红。
 
 从 1.2.0 起，修缺陷不再以“最小修复”为目标，而是按根因做完整修复并过完成门禁：最终构建跑完整矩阵、交付物自包含、可补项不能留成欠账。
 
@@ -101,9 +101,21 @@ python3 scripts/package.py --check
 检查通过（--check 模式，未生成 zip）
 ```
 
-当前仓库实测为 70 / 70 文件；上限是 70 文件、10 MB。
+当前仓库实测为 60 / 60 文件；上限是 60 文件、10 MB。
 
 `--check` 只统计和校验，不生成压缩包。文件数或体积超过上限时会直接失败，不生成 zip。
+
+### 可选：把完成线装成 pre-push
+
+在仓库根的 `.git/hooks/pre-push` 写入下面内容，并执行 `chmod +x .git/hooks/pre-push`；推送前会自动跑账本、覆盖、清单、范围锁和脱敏检查，任一失败就阻止推送：
+
+```sh
+#!/bin/sh
+python3 scripts/verity.py gate --root . \
+  --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md --release
+```
+
+这不是服务端强制，只是本地提醒；真正的强制线在 CI 的“本地完成线门禁”步骤。
 
 ## 四种模式
 
@@ -183,7 +195,7 @@ verity/
 - 视觉验收：`references/visual.md`
 - 纯视觉优化：`references/ui-improvement.md`
 - 行为与性能：`references/behavior-perf.md`
-- 21 类反例与红队夹具：`docs/reviews/anti-examples.md`
+- 37 类反例与红队夹具：`docs/reviews/anti-examples.md`
 - 本机空目录复跑记录：`docs/reviews/clean-clone.md`
 - 新功能模式：`references/new-feature.md`
 - 修缺陷模式：`references/bug-fix.md`

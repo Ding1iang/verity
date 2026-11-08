@@ -1,6 +1,6 @@
 # 反例预备清单
 
-> 第 1–5 节是给独立复核方（verifier）的预备清单，不是验收结论；第 6 节是 verifier 在 2026-11-06 的独立复核记录。21 类反例都由 `python3 scripts/anti_examples.py` 在临时目录生成并逐条断言错误码；固定示例目录里的四个反例用于让读者直接看到坏账本长什么样。
+> 第 1–5 节是给独立复核方（verifier）的预备清单，不是验收结论；第 6 节是 verifier 在 2026-11-06 的独立复核记录。当前 37 类反例都由 `python3 scripts/anti_examples.py` 在临时目录生成并逐条断言错误码；固定示例目录里的四个反例用于让读者直接看到坏账本长什么样。
 
 ## 1. 一键复跑
 
@@ -13,10 +13,10 @@ python3 scripts/anti_examples.py
 预期最后一行：
 
 ```text
-结果：21/21 反例按预期报错
+结果：37/37 夹具按预期
 ```
 
-脚本只看“检查器是否报出指定错误码”，不把退出码 0/1 当作唯一判据；每个样本都打印 `[PASS] 样本名: 错误码`。退出码 0 表示 21 类全部命中，1 表示至少一类没有命中指定错误码。
+脚本只看“检查器是否报出指定错误码”，不把退出码 0/1 当作唯一判据；每个样本都打印 `[PASS] 样本名: 错误码`。退出码 0 表示 37 类全部命中，1 表示至少一类没有命中指定错误码。
 
 ## 2. 21 类预备清单
 
@@ -121,3 +121,8 @@ python3 scripts/check_evidence.py "$TMP/<样本>/07-验收回归清单.md" --for
 ## 7. 2026-11-08 复跑（v1.3.0，21 类）
 
 `python3 scripts/anti_examples.py` 退出 0，末行 `结果：21/21 反例按预期报错`。新增的 11 条 v2 反例都用 `examples/05-release` 的合规任务卡、旅程卡和账本作底，只改目标字段；错误码依次覆盖 `E_STRUCTURE`、`E_JOURNEY_NOT_PASSED`、`E_COVERS`、`E_REVIEW_INDEPENDENT`、`E_BLOCKING_FORM`、`E_EVIDENCE_REUSED`、`E_ARTIFACT_BUILD`、`E_EVIDENCE_PATH`、`E_FAKE_EVIDENCE`、`E_DUP_SOURCE`。正例 `examples/04`、`05` 仍通过，证明不是“检查器一律报红”。
+
+
+## 8. 2026-11-08 第二轮复跑（v1.3.0，37 类）
+
+`python3 scripts/anti_examples.py` 退出 0，末行 `结果：37/37 夹具按预期`。在原 21 类之外新增 16 类：ascii 假图片、伪造 workspace_hash、多代理缺归属表、多任务归属、硬触发误走轻验收、模糊判据“功能可用”、commit 写工作区、旅程 1 步、旅程 8 步、单条不变量、高风险缺异常分支、跨区域仅一张卡、证据命令成功、命令非零退出、命令未登记。新增夹具都从合规 v2 批次单点变异，并各自在临时 git 仓库里绑定真实 commit，避免“因为缺段或 commit 无效才报错”的假阴性。

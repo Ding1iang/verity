@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """verity 技能包打包检查与 zip 生成。
 
-规则：文件数超过 70 或总大小超过 10 MB 时直接报错，不生成 zip。
+规则：文件数超过 60 或总大小超过 10 MB 时直接报错，不生成 zip。
 上限按自用开源仓库的口径设置，覆盖技能内容与 GitHub 协作文件。
 
 优先用 `git ls-files` 取“已跟踪 + 未忽略”的文件，保证 .gitignore 里
@@ -19,11 +19,12 @@ import fnmatch
 import os
 import subprocess
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 from typing import Optional
 
-DEFAULT_MAX_FILES = 70
+DEFAULT_MAX_FILES = 60
 DEFAULT_MAX_BYTES = 10 * 1024 * 1024
 
 # 无 git 时的目录排除表；与 .gitignore 的意图保持一致。
@@ -50,7 +51,21 @@ EXCLUDED_NAMES = {".DS_Store"}
 EXCLUDED_SUFFIXES = {".pyc", ".pyo", ".zip"}
 EXCLUDED_PATTERNS = ("*.local.*", "*.secret", "*.pem", "*.key")
 # 分析记录不是技能交付物：它引用外部仓库、体量大且会随调研变化，不进技能包。
-EXCLUDED_RELATIVE_PATTERNS = ("docs/2026-*外部工作流对比与优化清单.md",)
+EXCLUDED_RELATIVE_PATTERNS = (
+    "docs/2026-*外部工作流对比与优化清单.md",
+    "docs/reviews/32-item-review.md",
+    "docs/reviews/32-item-verification.md",
+    "docs/reviews/2026-11-06-independent-review.md",
+    ".github/ISSUE_TEMPLATE/*",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "examples/01-new-feature/bad-main-path/*",
+    "examples/02-bug-fix/bad-old-evidence/*",
+    "examples/04-project-v1/bad-fake-screenshot/*",
+    "examples/05-release/bad-gate-only/*",
+    "examples/04-project-v1/manifest.json",
+    "examples/01-new-feature/README.md",
+)
 
 
 def human_size(size: int) -> str:
@@ -166,12 +181,30 @@ def make_zip(files: list[Path], root: Path, output: Path, prefix: str) -> None:
             archive.write(path, arcname)
 
 
+
+def package_selftest() -> int:
+    """验证 60 文件通过、70 文件失败的硬上限，防止为了临时记录放宽规则。"""
+    with tempfile.TemporaryDirectory(prefix="verity-package-") as temporary:
+        root = Path(temporary)
+        for count, should_pass in ((60, True), (70, False)):
+            case = root / str(count)
+            case.mkdir()
+            for index in range(count):
+                (case / f"file-{index:02d}.txt").write_text("x", encoding="utf-8")
+            files, _ = collect_files(case, case / "dist" / "verity.zip")
+            _, problems = check_limits(files, DEFAULT_MAX_FILES, DEFAULT_MAX_BYTES)
+            ok = (not problems) if should_pass else bool(problems)
+            print(f"[{'PASS' if ok else 'FAIL'}] {count} 文件：{'应通过' if should_pass else '应失败'}（{len(files)} 个）")
+            if not ok:
+                return 1
+    return 0
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="统计 verity 技能包文件数/体积并生成 zip")
     parser.add_argument("--root", default=".", help="要打包的仓库根目录，默认当前目录")
     parser.add_argument("--output", help="zip 输出路径，默认 <root>/dist/verity.zip")
     parser.add_argument("--prefix", default="verity", help="zip 内的根目录名；传空字符串表示不套目录")
-    parser.add_argument("--max-files", type=int, default=DEFAULT_MAX_FILES, help="文件数上限，默认 70")
+    parser.add_argument("--max-files", type=int, default=DEFAULT_MAX_FILES, help="文件数上限，默认 60")
     parser.add_argument(
         "--max-bytes",
         type=int,
@@ -181,8 +214,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="只统计和检查，不生成 zip")
     mode.add_argument("--zip", action="store_true", help="生成 zip（不传参数时的默认行为）")
+    mode.add_argument("--selftest", action="store_true", help="运行 60 通过 / 70 失败的上限反例")
     args = parser.parse_args(argv)
 
+    if args.selftest:
+        return package_selftest()
     root = Path(args.root).expanduser().resolve()
     if not root.is_dir():
         print(f"用法错误：根目录不存在：{root}", file=sys.stderr)

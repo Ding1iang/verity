@@ -43,6 +43,13 @@ jobs:
           python scripts/check_evidence.py examples/04-project-v1/07-验收回归清单.md \
             --format v1 --root examples/04-project-v1
 
+      - name: 本地完成线门禁
+        run: |
+          python scripts/verity.py gate \
+            --root . \
+            --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md \
+            --release
+
   markdown-links:
     name: Markdown 链接
     runs-on: ubuntu-latest

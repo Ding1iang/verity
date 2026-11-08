@@ -25,7 +25,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
+import shutil
+import struct
+import tarfile
+import tempfile
+import zlib
 import re
 import subprocess
 import sys
@@ -163,13 +169,46 @@ VAGUE_CRITERION_WORDS = (
     "差不多",
 )
 CRITERION_EXEMPT_RE = re.compile(r"<!--\s*criterion-exempt:\s*(AC-[A-Za-z0-9-]+)\s+(.+?)\s*-->")
+# 可判定判据至少要有“动作”和“可观察结果/阈值”，否则“功能可用”这类
+# 句子也能过 lint。词表只做下限判断，不替代人工评审。
+CRITERION_ACTION_WORDS = (
+    "点击", "打开", "输入", "提交", "运行", "执行", "调用", "请求", "创建", "删除",
+    "修改", "保存", "加载", "返回", "显示", "输出", "写入", "生成", "触发", "切换",
+    "上传", "下载", "启动", "停止", "查询", "搜索", "选择", "安装", "升级", "回滚",
+    "校验", "检查", "复跑", "构建", "发布", "读取", "设置", "断言", "比对",
+)
+CRITERION_OBSERVABLE_RE = re.compile(
+    r"(出现|显示|返回|输出|等于|为\s*\d|变成|变为|增加|减少|成功|失败|报错|错误码|"
+    r"退出码|读数|计数|状态|一致|包含|存在|为空|不为空|通过|不通过|阈值|"
+    r"\d+\s*(?:秒|毫秒|次|条|个|份|%|px)|[<>=≥≤]\s*\d|是|否|OK|PASS|FAIL)",
+    re.IGNORECASE,
+)
+CRITERION_UNIVERSAL_WORDS = ("全部", "所有", "任意", "每次", "始终", "一律", "从不")
+CRITERION_SAMPLE_RE = re.compile(
+    r"(样本|范围|共\s*\d+|\d+\s*(?:个|条|次|份|批|例)|覆盖\s*\d+|在.{0,12}(?:范围|样本))"
+)
+
+
+def criterion_problem(criterion: str) -> str:
+    """返回判据不可判定的原因；空字符串表示通过 lint。"""
+    text = criterion.strip()
+    if len(text) < 8:
+        return "判据太短，至少写清动作和可观察结果"
+    if not any(word in text for word in CRITERION_ACTION_WORDS):
+        return "判据缺少可执行动作（如点击、运行、提交、返回）"
+    if not CRITERION_OBSERVABLE_RE.search(text):
+        return "判据缺少可观察结果、读数或阈值（如退出码 0、计数=1、显示成功）"
+    for word in CRITERION_UNIVERSAL_WORDS:
+        if word in text and not CRITERION_SAMPLE_RE.search(text):
+            return f"全称结论“{word}”没有写样本范围（如共 3 个、抽样 5 条）"
+    return ""
 V1_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*-[0-9]{2,3}$")
-V1_COMMIT_RE = re.compile(r"^(?:[0-9a-fA-F]{7,40}|工作区)$")
+V1_COMMIT_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 V1_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 # 截图类证据必须能落到一张真实图片上。只认常见图片后缀，并要求文件非空；
 # “见截图”“截图如下”这类自述不算证据，防止用文字冒充截图。
-IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 
 # 自述缺口短语：这些话出现在“通过/带欠账”的证据列里，说明证据边界没有
 # 覆盖验收项本身，不能作为通过依据。只做保守的短语命中，不改 legacy 行为。
@@ -422,22 +461,189 @@ def path_exists(candidate: str, root: Path, ledger_dir: Path) -> bool:
     return resolve_existing_path(candidate, root, ledger_dir) is not None
 
 
-def has_readable_image(evidence: str, root: Path, ledger_dir: Path) -> bool:
-    """判断证据里是否至少有一张存在且非空的图片文件。
+def _png_pixels(data: bytes) -> Optional[dict]:
+    """解析 PNG 头并计算解码后像素字节的 SHA-256。
 
-    截图证据的关键是“图能打开”，不是“文字里写了截图”。这里只做文件级
-    检查，像素内容仍由对应判据门禁负责；空文件同样视为不可读。
+    只接受 8 位、非隔行的灰度/RGB/RGBA/灰度+Alpha；其余格式返回尺寸但
+    pixel_hash 为 None，检查器会明确拒绝拿不可验证的哈希判通过。
+    """
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return None
+    position = 8
+    width = height = bit_depth = color_type = interlace = None
+    compressed = bytearray()
+    while position + 12 <= len(data):
+        length = int.from_bytes(data[position:position + 4], "big")
+        chunk_type = data[position + 4:position + 8]
+        chunk = data[position + 8:position + 8 + length]
+        if len(chunk) != length:
+            return None
+        if chunk_type == b"IHDR" and length >= 13:
+            width, height, bit_depth, color_type, _, _, interlace = struct.unpack(
+                ">IIBBBBB", chunk[:13]
+            )
+        elif chunk_type == b"IDAT":
+            compressed.extend(chunk)
+        elif chunk_type == b"IEND":
+            break
+        position += 12 + length
+    if width is None or height is None or not width or not height:
+        return None
+    info = {"format": "png", "width": width, "height": height, "pixel_hash": None}
+    channels = {0: 1, 2: 3, 4: 2, 6: 4}.get(color_type)
+    if bit_depth != 8 or interlace != 0 or channels is None:
+        return info
+    try:
+        raw = zlib.decompress(bytes(compressed))
+    except zlib.error:
+        return info
+    stride = width * channels
+    if len(raw) < height * (stride + 1):
+        return info
+    previous = bytearray(stride)
+    pixels = bytearray()
+    offset = 0
+    for _ in range(height):
+        filter_type = raw[offset]
+        offset += 1
+        row = bytearray(raw[offset:offset + stride])
+        offset += stride
+        for index in range(stride):
+            left = row[index - channels] if index >= channels else 0
+            above = previous[index]
+            upper_left = previous[index - channels] if index >= channels else 0
+            if filter_type == 1:
+                row[index] = (row[index] + left) & 0xFF
+            elif filter_type == 2:
+                row[index] = (row[index] + above) & 0xFF
+            elif filter_type == 3:
+                row[index] = (row[index] + ((left + above) // 2)) & 0xFF
+            elif filter_type == 4:
+                p = left + above - upper_left
+                pa, pb, pc = abs(p - left), abs(p - above), abs(p - upper_left)
+                predictor = left if pa <= pb and pa <= pc else (above if pb <= pc else upper_left)
+                row[index] = (row[index] + predictor) & 0xFF
+            elif filter_type != 0:
+                return info
+        pixels.extend(row)
+        previous = row
+    info["pixel_hash"] = hashlib.sha256(bytes(pixels)).hexdigest()
+    return info
+
+
+def _jpeg_size(data: bytes) -> Optional[dict]:
+    """解析 JPEG 的 SOF 段，返回宽高；无法解码像素哈希。"""
+    if not data.startswith(b"\xff\xd8"):
+        return None
+    position = 2
+    while position + 4 <= len(data):
+        if data[position] != 0xFF:
+            position += 1
+            continue
+        marker = data[position + 1]
+        position += 2
+        if marker in {0xD8, 0xD9}:
+            continue
+        if position + 2 > len(data):
+            return None
+        length = int.from_bytes(data[position:position + 2], "big")
+        if length < 2 or position + length > len(data):
+            return None
+        if marker in {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}:
+            if length < 7:
+                return None
+            height = int.from_bytes(data[position + 3:position + 5], "big")
+            width = int.from_bytes(data[position + 5:position + 7], "big")
+            if width and height:
+                return {"format": "jpeg", "width": width, "height": height, "pixel_hash": None}
+            return None
+        position += length
+    return None
+
+
+def read_image_info(path: Path) -> Optional[dict]:
+    """读取图片真实尺寸；ASCII 文本改名 .png 会在这里被拒绝。"""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if path.suffix.lower() == ".png":
+        return _png_pixels(data)
+    if path.suffix.lower() in {".jpg", ".jpeg"}:
+        return _jpeg_size(data)
+    return None
+
+
+def has_readable_image(evidence: str, root: Path, ledger_dir: Path) -> bool:
+    """判断证据里是否至少有一张能按文件头解析出尺寸的图片。
+
+    截图证据的关键是“图能打开”，不是“文字里写了截图”。只认 PNG/JPEG
+    文件头；把 ASCII 文本改名成 shot.png 不会再被当成截图。
     """
     for candidate in extract_paths(evidence):
         resolved = resolve_existing_path(candidate, root, ledger_dir)
         if resolved is None or resolved.suffix.lower() not in IMAGE_SUFFIXES:
             continue
+        if read_image_info(resolved) is not None:
+            return True
+    return False
+
+
+def workspace_fingerprint(root: Path, exclude_dir: Optional[Path] = None) -> Optional[str]:
+    """按 git 跟踪文件内容计算工作区指纹。
+
+    只算已跟踪文件，避免未跟踪的评审记录改变结果；批次账本所在目录
+    默认排除，防止“写账本”本身反过来改变指纹。取证后任意受控文件
+    内容变化，指纹就会不同，从而让旧证据失效。
+    """
+    excluded = None
+    if exclude_dir is not None:
         try:
-            if resolved.stat().st_size > 0:
-                return True
+            excluded = exclude_dir.resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            excluded = None
+    try:
+        listed = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z"],
+            capture_output=True,
+            check=False,
+        )
+        names = [raw.decode("utf-8", "surrogateescape") for raw in listed.stdout.split(b"\0") if raw]
+        if listed.returncode != 0:
+            names = []
+    except OSError:
+        names = []
+    if not names:
+        # 非 git 目录（反例夹具、导出的证据包）按目录内容计算；
+        # 账本和清单会随取证更新，不纳入工作区指纹，否则永远对不上。
+        names = [
+            path.relative_to(root).as_posix()
+            for path in sorted(root.rglob("*"))
+            if path.is_file()
+        ]
+    digest = hashlib.sha256()
+    for relative in names:
+        if excluded and (relative == excluded or relative.startswith(excluded + "/")):
+            continue
+        if relative.startswith(".git/") or relative.startswith("dist/"):
+            continue
+        if Path(relative).name.startswith("07-") or Path(relative).name == "manifest.json":
+            continue
+        # 证据文件本来就会在取证过程中追加；它们由证据身份表的 SHA-256 单独约束，
+        # 不纳入工作区指纹，否则“补一条证据”会把刚记录的指纹反过来作废。
+        if relative.startswith("evidence/") or "/evidence/" in relative:
+            continue
+        path = root / relative
+        if not path.is_file():
+            continue
+        digest.update(relative.encode("utf-8", "surrogateescape"))
+        digest.update(b"\0")
+        try:
+            digest.update(path.read_bytes())
         except OSError:
             continue
-    return False
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def self_report_gap_issues(evidence: str, status: str, item_id: str, line: int) -> list[Issue]:
@@ -851,7 +1057,7 @@ def check_task_card(
     ledger_dir: Path,
     batch_values: dict[str, str],
     issues: list[Issue],
-) -> tuple[Optional[Path], list[tuple[str, str, int]], str, str]:
+) -> tuple[Optional[Path], list[tuple[str, str, int]], str, str, str]:
     """校验任务卡结构并返回 AC 清单、车道和风险。"""
     card_name = batch_values.get("任务卡", "").strip()
     card_path: Optional[Path] = None
@@ -871,6 +1077,20 @@ def check_task_card(
 
     text = card_path.read_text(encoding="utf-8")
     sections = split_sections(text)
+    basic = find_section(sections, "基本信息")
+    card_schema = ""
+    if basic is not None:
+        basic_values, _ = table_key_values(basic)
+        card_schema = basic_values.get("schema_version", "").strip()
+    if card_schema != "2":
+        issues.append(
+            Issue(
+                "E_SCHEMA",
+                f"任务卡 schema_version 必须是 2（当前 {card_schema or '缺失'}）；"
+                "旧任务卡先运行 python3 scripts/verity.py upgrade <07>",
+                basic[1] if basic is not None else None,
+            )
+        )
     acs = parse_task_card_acs(text)
     if not acs:
         issues.append(Issue("E_TASKCARD", "任务卡没有可解析的“验收项表”或 AC 清单", None))
@@ -878,6 +1098,7 @@ def check_task_card(
     lane = ""
     risk = ""
     complexity = ""
+    hard_trigger = ""
     lane_section = find_section(sections, "车道与风险")
     if lane_section is None:
         issues.append(Issue("E_TASK_LANE", "任务卡缺少“## 车道与风险”段", None))
@@ -886,17 +1107,22 @@ def check_task_card(
         lane = values.get("车道", "").strip()
         risk = values.get("风险", "").strip()
         complexity = values.get("复杂度", "").strip()
+        hard_trigger = values.get("硬触发", "").strip()
         if lane not in {"轻验收", "全流程"}:
             issues.append(Issue("E_TASK_LANE", "车道只能是“轻验收”或“全流程”", lane_section[1]))
-        hard_trigger = (
-            "跨模块" in complexity
-            or any(word in risk for word in ("不可逆", "数据", "安全"))
+        if not hard_trigger:
+            issues.append(
+                Issue("E_TASK_LANE", "车道与风险表缺少“硬触发”字段（没有就填“无”）", lane_section[1])
+            )
+        trigger_words = (
+            "发布", "数据", "安全", "跨模块", "多步用户旅程", "难复现", "不可逆", "迁移"
         )
-        if hard_trigger and lane != "全流程":
+        hit_triggers = [word for word in trigger_words if word in hard_trigger]
+        if hit_triggers and lane != "全流程":
             issues.append(
                 Issue(
                     "E_TASK_LANE",
-                    "跨模块、不可逆、数据或安全风险必须走全流程车道",
+                    "硬触发命中“" + "、".join(hit_triggers) + "”，必须走全流程车道",
                     lane_section[1],
                 )
             )
@@ -943,15 +1169,22 @@ def check_task_card(
         if not allow:
             issues.append(Issue("E_SCOPE_LOCK", "范围锁没有填写任何“做”路径", scope[1]))
 
-    exemptions = {match.group(1) for match in CRITERION_EXEMPT_RE.finditer(text)}
+    exemptions = {match.group(1): match.group(2).strip() for match in CRITERION_EXEMPT_RE.finditer(text)}
     for ac_id, criterion, number in acs:
         if not criterion:
             issues.append(Issue("E_CRITERION", f"{ac_id} 没有可判定判据", number))
             continue
+        if ac_id in exemptions:
+            reason = exemptions[ac_id]
+            if len(reason) < 8 or reason in {"无", "无需", "不适用", "见上"}:
+                issues.append(
+                    Issue("E_CRITERION", f"{ac_id} 的 criterion-exempt 理由过于笼统，需写清为何不可自动判定", number)
+                )
+            continue
         hit = next((word for word in VAGUE_CRITERION_WORDS if word in criterion), "")
         if not hit and re.search(r"(?:^|[，。；、\s])等(?:[，。；、\s]|$)", criterion):
             hit = "等"
-        if hit and ac_id not in exemptions:
+        if hit:
             issues.append(
                 Issue(
                     "E_CRITERION",
@@ -959,8 +1192,12 @@ def check_task_card(
                     number,
                 )
             )
+            continue
+        problem = criterion_problem(criterion)
+        if problem:
+            issues.append(Issue("E_CRITERION", f"{ac_id} 的判据不可判定：{problem}", number))
 
-    return card_path, acs, lane, risk
+    return card_path, acs, lane, risk, hard_trigger
 
 
 def check_journey_section(
@@ -968,6 +1205,7 @@ def check_journey_section(
     sections,
     rows: list[dict],
     risk: str,
+    hard_trigger: str,
     issues: list[Issue],
 ) -> bool:
     """校验旅程卡、旅程结论和 07 行到旅程步骤的映射。"""
@@ -997,6 +1235,16 @@ def check_journey_section(
         )
 
     passed = conclusion == "通过"
+    # 跨区域批次至少要有三张旅程卡，覆盖不同区域；一张卡不能代表多区域。
+    if "跨区域" in (risk + hard_trigger) and len(cards) < 3:
+        issues.append(
+            Issue(
+                "E_JOURNEY_REGION",
+                f"跨区域批次至少需要 3 张旅程卡，当前只有 {len(cards)} 张",
+                section[1],
+            )
+        )
+        passed = False
     for name in cards:
         card_path = ledger_dir / name
         if not card_path.exists():
@@ -1042,6 +1290,41 @@ def check_journey_section(
                             steps.append(int(value))
         if not steps:
             issues.append(Issue("E_JOURNEY_STEP", f"旅程卡 {name} 没有可解析的步骤表", section[1]))
+            passed = False
+        elif not 3 <= len(steps) <= 7:
+            issues.append(
+                Issue(
+                    "E_JOURNEY_STEP",
+                    f"旅程卡 {name} 有 {len(steps)} 步，应为 3–7 步",
+                    section[1],
+                )
+            )
+            passed = False
+        # 每张卡至少写三条跨区域不变量；不变量是“换区域仍成立”的约束，
+        # 不是重复步骤描述。
+        invariants: set[str] = set()
+        if step_section is not None:
+            table = parse_first_table(step_section[2])
+            if table is not None:
+                _, header, invariant_rows = table
+                normalized = [normalize_header(item) for item in header]
+                invariant_index = next(
+                    (i for i, item in enumerate(normalized) if "不变量" in item),
+                    None,
+                )
+                if invariant_index is not None:
+                    for _, row in invariant_rows:
+                        value = cell(row, invariant_index).strip()
+                        if value and not value.startswith("<") and value not in {"—", "-"}:
+                            invariants.add(value)
+        if len(invariants) < 3:
+            issues.append(
+                Issue(
+                    "E_JOURNEY_INVARIANT",
+                    f"旅程卡 {name} 只有 {len(invariants)} 条不变量，每卡至少 3 条",
+                    section[1],
+                )
+            )
             passed = False
         for step in steps:
             pattern = re.compile(rf"{re.escape(card_id)}\s*/\s*步骤\s*{step}(?!\d)")
@@ -1316,6 +1599,7 @@ def check_evidence_identity(
         issues.append(Issue("E_ARTIFACT", "证据身份表头缺列：" + "、".join(missing), section[1]))
         return
 
+    current_workspace = workspace_fingerprint(root, ledger_dir)
     registered: dict[Path, dict[str, str]] = {}
     for number, row in identity_rows:
         values = {key: cell(row, index).strip() for key, index in indexes.items()}
@@ -1359,6 +1643,18 @@ def check_evidence_identity(
                 issues.append(
                     Issue("E_ARTIFACT_ENV", f"{candidate} 的 workspace_hash 不是 64 位哈希", number)
                 )
+            elif current_workspace is None:
+                issues.append(
+                    Issue("E_ARTIFACT_ENV", "无法计算当前工作区指纹，不能验证 workspace_hash", number)
+                )
+            elif values["workspace"].lower() != current_workspace:
+                issues.append(
+                    Issue(
+                        "E_WORKSPACE_CHANGED",
+                        f"{candidate} 的 workspace_hash 与当前工作区不一致：取证后文件已变化",
+                        number,
+                    )
+                )
 
     for row in rows:
         if row["status"] == "未覆盖":
@@ -1385,21 +1681,106 @@ def check_evidence_identity(
                         row["line"],
                     )
                 )
-            if row["type"] in {"截图", "像素"} and structured.get("pixel_hash"):
-                if not re.fullmatch(r"[0-9a-fA-F]{64}", structured["pixel_hash"]):
+            if row["type"] in {"截图", "像素"}:
+                expected_pixel = structured.get("pixel_hash", "")
+                if expected_pixel and not re.fullmatch(r"[0-9a-fA-F]{64}", expected_pixel):
                     issues.append(
                         Issue("E_ARTIFACT_STRUCTURE", f"{row['id']} 的 pixel_hash 不是 64 位哈希", row["line"])
                     )
-            if row["type"] in {"截图", "像素"} and structured.get("viewport"):
-                if not re.fullmatch(r"\d+x\d+", structured["viewport"]):
-                    issues.append(
-                        Issue("E_ARTIFACT_STRUCTURE", f"{row['id']} 的 viewport 应为 宽x高", row["line"])
-                    )
+                for path in row["paths"]:
+                    if path.suffix.lower() not in IMAGE_SUFFIXES:
+                        continue
+                    info = read_image_info(path)
+                    if info is None:
+                        issues.append(
+                            Issue("E_SCREENSHOT", f"{row['id']} 的截图无法按 PNG/JPEG 头解析：{path.name}", row["line"])
+                        )
+                        continue
+                    if structured.get("viewport"):
+                        if not re.fullmatch(r"\d+x\d+", structured["viewport"]):
+                            issues.append(
+                                Issue("E_ARTIFACT_STRUCTURE", f"{row['id']} 的 viewport 应为 宽x高", row["line"])
+                            )
+                        elif structured["viewport"] != f"{info['width']}x{info['height']}":
+                            issues.append(
+                                Issue(
+                                    "E_ARTIFACT_STRUCTURE",
+                                    f"{row['id']} 的 viewport {structured['viewport']} 与图片实际 "
+                                    f"{info['width']}x{info['height']} 不一致",
+                                    row["line"],
+                                )
+                            )
+                    if expected_pixel:
+                        if info.get("pixel_hash") is None:
+                            issues.append(
+                                Issue(
+                                    "E_ARTIFACT_STRUCTURE",
+                                    f"{row['id']} 的图片格式无法验证 pixel_hash，不能据此判通过",
+                                    row["line"],
+                                )
+                            )
+                        elif expected_pixel.lower() != info["pixel_hash"]:
+                            issues.append(
+                                Issue("E_ARTIFACT_STRUCTURE", f"{row['id']} 的 pixel_hash 与图片实际像素不一致", row["line"])
+                            )
             if row["type"] == "性能" and structured.get("runs"):
                 if not structured["runs"].isdigit() or int(structured["runs"]) <= 0:
                     issues.append(
                         Issue("E_ARTIFACT_STRUCTURE", f"{row['id']} 的 runs 必须是正整数", row["line"])
                     )
+
+
+def check_evidence_ownership(
+    sections,
+    batch_values: dict[str, str],
+    root: Path,
+    ledger_dir: Path,
+    issues: list[Issue],
+) -> None:
+    """校验多代理证据归属表；单代理批次允许写一句说明。"""
+    section = find_section_prefix(sections, "证据归属")
+    if section is None:
+        return
+    text = "\n".join(line for _, line in section[2])
+    table = parse_first_table(section[2])
+    if table is None:
+        if "多代理" in text or "多 agent" in text.lower():
+            issues.append(
+                Issue("E_EVIDENCE_OWNER", "多代理批次必须用表格登记 task_id/agent_id/claimed_at", section[1])
+            )
+        return
+    _, header, rows = table
+    normalized = [normalize_header(item) for item in header]
+    indexes = {}
+    for key, aliases in {
+        "task": ("task_id", "task id", "任务id"),
+        "agent": ("agent_id", "agent id", "代理id", "执行者"),
+        "claimed": ("claimed_at", "claimed at", "领取时间"),
+    }.items():
+        indexes[key] = next((i for i, item in enumerate(normalized) if item in aliases), None)
+    missing = [key for key, index in indexes.items() if index is None]
+    if missing:
+        issues.append(Issue("E_EVIDENCE_OWNER", "证据归属表头缺列：" + "、".join(missing), section[1]))
+        return
+    for number, row in rows:
+        values = {key: cell(row, index).strip() for key, index in indexes.items()}
+        if all(not value for value in values.values()):
+            continue
+        empty = [key for key, value in values.items() if not value or value.startswith("<")]
+        if empty:
+            issues.append(Issue("E_EVIDENCE_OWNER", "证据归属行有空字段：" + "、".join(empty), number))
+        if values["claimed"] and not re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?", values["claimed"]
+        ):
+            issues.append(Issue("E_EVIDENCE_OWNER", "claimed_at 应为 YYYY-MM-DD 或 ISO 时间", number))
+    # task_id 至少不能是占位符；多行必须归属同一个批次任务。
+    task_ids = {
+        cell(row, indexes["task"]).strip()
+        for _, row in rows
+        if cell(row, indexes["task"]).strip() and not cell(row, indexes["task"]).startswith("<")
+    }
+    if len(task_ids) > 1:
+        issues.append(Issue("E_EVIDENCE_OWNER", "同一批次的证据归属出现了多个 task_id", section[1]))
 
 
 def check_blocking_form(
@@ -1508,6 +1889,16 @@ def check_v1_ledger(
     if batch_start is None:
         issues.append(Issue("E_BATCH_INFO", "缺少“## 批次信息”段"))
     else:
+        schema_version = batch_values.get("schema_version", "").strip()
+        if schema_version != "2":
+            issues.append(
+                Issue(
+                    "E_SCHEMA",
+                    f"账本 schema_version 必须是 2（当前 {schema_version or '缺失'}）；旧账本先运行 "
+                    "python3 scripts/verity.py upgrade <07>",
+                    batch_start,
+                )
+            )
         for name in ("任务卡", "被测版本", "环境", "执行者", "复核者", "收口时间", "生成日期"):
             value = batch_values.get(normalize_header(name), "").strip()
             if v1_text_empty(value):
@@ -1527,7 +1918,7 @@ def check_v1_ledger(
             if find_section(sections, name) is None:
                 issues.append(Issue("E_RELEASE_SECTION", f"发布批次缺少“## {name}”段"))
 
-    card_path, acs, _, risk = check_task_card(path.parent, batch_values, issues)
+    card_path, acs, _, risk, hard_trigger = check_task_card(path.parent, batch_values, issues)
     journey_passed = False
 
     package = find_section(sections, "包结论")
@@ -1680,9 +2071,9 @@ def check_v1_ledger(
         if status != "未覆盖" and commit and not v1_value_empty(commit):
             if not V1_COMMIT_RE.fullmatch(commit):
                 issues.append(
-                    Issue("E_COMMIT", f"commit“{commit}”不是 7-40 位哈希或“工作区”", number)
+                    Issue("E_COMMIT", f"commit“{commit}”不是 7-40 位哈希；最终验收必须绑定真实提交", number)
                 )
-            elif commit != "工作区":
+            else:
                 commit_date, commit_error = git_commit_date(root, commit)
                 if commit_error:
                     issues.append(
@@ -1867,7 +2258,7 @@ def check_v1_ledger(
         )
 
     # 旅程步骤映射需要完整的行记录，放在行循环之后补一次。
-    journey_ok = check_journey_section(path.parent, sections, row_records, risk, issues)
+    journey_ok = check_journey_section(path.parent, sections, row_records, risk, hard_trigger, issues)
     if journey_passed != journey_ok:
         journey_passed = journey_ok
 
@@ -1875,6 +2266,7 @@ def check_v1_ledger(
     check_completion_audit(sections, acs, batch_build, root, ledger_dir, issues)
     check_independent_review(sections, acs, row_records, batch_values, root, ledger_dir, issues)
     check_blocking_form(ledger_dir, row_records, issues)
+    check_evidence_ownership(sections, batch_values, root, ledger_dir, issues)
 
     # 任务卡在取证之后又被改动，说明判据变了，旧证据随之失效。
     if card_path is not None and card_path.exists():
@@ -2288,6 +2680,150 @@ def render_summary(path: Path, counts: dict[str, int], conclusion: str) -> str:
     return f"[OK] {path}：{sum(counts.values())} 行，结论={conclusion or '未写'}（{detail}）"
 
 
+def read_evidence_commands(adapter_path: Path) -> dict[str, str]:
+    """读取适配层的 evidence_commands 白名单。
+
+    支持对象形式 {"EV-01": {"command": "..."}} 和数组形式
+    [{"id": "EV-01", "command": "..."}]；只允许 EV-数字 ID。
+    """
+    try:
+        data = json.loads(adapter_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"无法读取适配层：{error}") from error
+    raw = data.get("evidence_commands") if isinstance(data, dict) else None
+    if raw is None:
+        return {}
+    commands: dict[str, str] = {}
+    if isinstance(raw, dict):
+        items = raw.items()
+        for key, value in items:
+            command = value.get("command") if isinstance(value, dict) else value
+            if not isinstance(command, str) or not command.strip():
+                raise ValueError(f"evidence_commands.{key} 缺少 command")
+            commands[str(key)] = command.strip()
+    elif isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                raise ValueError("evidence_commands 数组项必须是对象")
+            key = str(item.get("id", "")).strip()
+            command = item.get("command")
+            if not key or not isinstance(command, str) or not command.strip():
+                raise ValueError("evidence_commands 数组项必须有 id 和 command")
+            commands[key] = command.strip()
+    else:
+        raise ValueError("evidence_commands 必须是对象或数组")
+    invalid = [key for key in commands if not re.fullmatch(r"EV-\d{2,3}", key)]
+    if invalid:
+        raise ValueError("evidence_commands 的 ID 必须是 EV-01 形式：" + "、".join(invalid))
+    return commands
+
+
+def _extract_clean_worktree(root: Path):
+    """把 HEAD 导出到临时目录，证据命令在干净树上执行。"""
+    temporary = tempfile.TemporaryDirectory(prefix="verity-evidence-")
+    target = Path(temporary.name)
+    archive = subprocess.run(
+        ["git", "-C", str(root), "archive", "--format=tar", "HEAD"],
+        capture_output=True,
+        check=False,
+    )
+    if archive.returncode == 0:
+        with tarfile.open(fileobj=io.BytesIO(archive.stdout), mode="r:") as bundle:
+            bundle.extractall(target)
+    else:
+        # 非 git 项目退化为复制工作区，但仍排除版本库与构建产物。
+        shutil.copytree(
+            root,
+            target,
+            dirs_exist_ok=True,
+            ignore=shutil.ignore_patterns(".git", "dist", "__pycache__", "*.pyc"),
+        )
+    return temporary, target
+
+
+def run_evidence_commands(
+    path: Path,
+    root: Path,
+    adapter_path: Optional[Path],
+    issues: list[Issue],
+    timeout: int = 120,
+) -> None:
+    """按 EV ID 执行适配层白名单命令；任何失败都阻断验收。"""
+    if adapter_path is None:
+        issues.append(Issue("E_EVIDENCE_COMMAND", "启用 --run 时必须提供适配层 evidence_commands"))
+        return
+    try:
+        commands = read_evidence_commands(adapter_path)
+    except ValueError as error:
+        issues.append(Issue("E_EVIDENCE_COMMAND", str(error)))
+        return
+    if not commands:
+        issues.append(Issue("E_EVIDENCE_COMMAND", "适配层没有配置 evidence_commands 白名单"))
+        return
+    text = path.read_text(encoding="utf-8")
+    sections = split_sections(text)
+    section = find_section(sections, "单项验收（证据账本）")
+    if section is None:
+        return
+    table = parse_first_table(section[2])
+    if table is None:
+        return
+    _, header, rows = table
+    columns = resolve_v1_columns(header)
+    referenced: list[str] = []
+    for number, row in rows:
+        status = cell(row, columns.get("status")).strip()
+        evidence = cell(row, columns.get("evidence"))
+        if status == "未覆盖":
+            continue
+        ids = re.findall(r"EV-\d{2,3}", evidence)
+        if not ids:
+            issues.append(
+                Issue("E_EVIDENCE_COMMAND", "启用 --run 时，每行证据必须标注 EV ID（如 EV-01）", number)
+            )
+            continue
+        referenced.extend(ids)
+    missing = sorted(set(referenced) - set(commands))
+    if missing:
+        issues.append(Issue("E_EVIDENCE_COMMAND", "账本引用了未登记的命令：" + "、".join(missing)))
+        return
+    if not referenced:
+        issues.append(Issue("E_EVIDENCE_COMMAND", "账本没有引用任何 EV ID"))
+        return
+    temporary, worktree = _extract_clean_worktree(root)
+    try:
+        for evidence_id in sorted(set(referenced)):
+            command = commands[evidence_id]
+            try:
+                process = subprocess.run(
+                    command,
+                    shell=True,
+                    cwd=worktree,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as error:
+                issues.append(
+                    Issue("E_EVIDENCE_COMMAND", f"{evidence_id} 命令执行失败：{error}")
+                )
+                continue
+            output = (process.stdout + process.stderr).strip().splitlines()
+            tail = " | ".join(output[-3:]) if output else "无输出"
+            if process.returncode != 0:
+                issues.append(
+                    Issue(
+                        "E_EVIDENCE_COMMAND",
+                        f"{evidence_id} 退出码 {process.returncode}：{command}；输出：{tail}",
+                    )
+                )
+            else:
+                print(f"[OK] {evidence_id} 退出码 0：{command}；输出：{tail}")
+    finally:
+        temporary.cleanup()
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="检查 verity 07 验收账本的字段、状态、证据文件与单一状态源"
@@ -2312,6 +2848,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         action="store_true",
         help="严格模式：拒绝任何“带欠账”状态或“带欠账交付”结论（默认已拒绝，保留用于显式卡口）",
     )
+    parser.add_argument(
+        "--run",
+        action="store_true",
+        help="按账本中的 EV ID 执行适配层 evidence_commands 白名单命令（在 HEAD 干净树中运行）",
+    )
+    parser.add_argument("--timeout", type=int, default=120, help="单条证据命令超时秒数，默认 120")
     args = parser.parse_args(argv)
 
     if args.ledger:
@@ -2335,6 +2877,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     adapter_root: Optional[Path] = None
     adapter_format = "auto"
     policy = LedgerPolicy()
+    adapter_file: Optional[Path] = None
     if args.adapter:
         adapter_path = Path(args.adapter).expanduser()
         if not adapter_path.is_file():
@@ -2348,6 +2891,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         adapter_root = context.project_root
         adapter_format = context.format
         policy = context.policy
+        adapter_file = adapter_path.resolve()
     elif args.compat_debt:
         # 只有未指定项目适配层时才允许松开；项目适配层自己的枚举优先。
         policy = LedgerPolicy(statuses=V1_STATUSES, conclusions=V1_CONCLUSIONS)
@@ -2365,10 +2909,25 @@ def main(argv: Optional[list[str]] = None) -> int:
                 root = parent
                 break
 
+    if args.run and adapter_file is None:
+        for parent in (resolved.parent, *resolved.parent.parents):
+            for name in (".verity/adapter.json", "verity-适配层.json", "verity-adapter.json", "adapter.json"):
+                candidate = parent / name
+                if candidate.is_file():
+                    adapter_file = candidate.resolve()
+                    break
+            if adapter_file is not None:
+                break
+        if adapter_file is None:
+            print("用法错误：--run 需要适配层（.verity/adapter.json 或 --adapter）", file=sys.stderr)
+            return 2
+
     forced_format = args.format if args.format != "auto" else adapter_format
     issues, counts, conclusion = check_ledger(
         resolved, root, forced_format, policy=policy, strict=args.strict
     )
+    if args.run:
+        run_evidence_commands(resolved, root, adapter_file, issues, timeout=args.timeout)
     errors = [issue for issue in issues if issue.severity == "error"]
     warnings = [issue for issue in issues if issue.severity != "error"]
 

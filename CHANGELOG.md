@@ -8,26 +8,26 @@ v1.3.0 落地 32 项工作流优化：任务卡前置盘问与快慢车道、AC/
 
 ### 变更
 
-- `SKILL.md`、`README.md`、`references/acceptance.md`、`references/adapter.md`：升到 1.3.0，统一 v1 schema 2 十三列、十段必需结构、四条硬规则、六份模板、五个示例和 21 类反例的计数。
+- `SKILL.md`、`README.md`、`references/acceptance.md`、`references/adapter.md`：升到 1.3.0，统一 v1 schema 2 十三列、十段必需结构、四条硬规则、六份模板、五个示例和 37 类反例的计数。
 - `templates/task-card.md`：新增车道与风险、立卡前盘问、规格摘要（spec-lite）、范围锁和可判判据。
 - `templates/07-acceptance.md`：十三列账本、用户旅程、证据身份、完成审计、独立复核、复盘、发布风险、证据归属。
 - `templates/journey-card.md`、`templates/blocking-form.md`：升 v2，补通用布局说明与四维举证字段。
 - `scripts/check_evidence.py`：v1 schema 2 全量校验；旅程未通过不判通过、AC 覆盖、同人复核、空举证、重复截图、旧构建、缺路径和伪证据都会阻断。
 - `scripts/check_coverage.py`：批次目录必须含 `journey-*.md`，自测增到 9 例。
 - `scripts/verity.py`：新增 doctor、gate、manifest、report、metrics、upgrade、scan；init 生成 `journey-01.md` 且不预填通过。
-- `scripts/anti_examples.py`：从 11 例扩到 21 例，新增 10 个 v2 反例。
-- `scripts/package.py`：排除分析记录，默认文件上限 70。
+- `scripts/anti_examples.py`：从 11 例扩到 37 例，新增 v2 结构、旅程、判据、范围锁、证据命令和证据归属反例。
+- `scripts/package.py`：排除分析记录和独立评审报告，默认文件上限恢复为 60；新增 `--selftest` 验证 60 通过、70 失败。
 - `examples/04-project-v1`、`examples/05-release`：补齐旅程、完成审计、证据身份和独立复核。
 - 新增 `docs/optimization-matrix.md`（32/32 状态 done）、`docs/reviews/2026-11-08-self-acceptance/` 自验收证据包。
 
 ### 验证
 
 - `python3 scripts/selftest.py`：5/5 通过。
-- `python3 scripts/anti_examples.py`：21/21 反例按预期报错。
+- `python3 scripts/anti_examples.py`：37/37 夹具按预期报错。
 - `python3 scripts/check_coverage.py --selftest`：9/9 通过。
 - `python3 scripts/verity.py gate --selftest`：正负对照通过。
 - `python3 scripts/verity.py gate --root . --ledger examples/04-project-v1/07-验收回归清单.md`：5/5 通过；05 同样 5/5。
-- `python3 scripts/package.py --check`：70/70 文件（上限 70）。
+- `python3 scripts/package.py --check`：60/60 文件（上限 60）。
 
 ## [v1.2.0] - 2026-11-07
 

@@ -36,6 +36,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE_DIR = REPO_ROOT / "templates"
 
 # 四种流程模式。CLI 用英文短名，写进文件时同时保留中文名，便于人读。
+ADAPTER_SCHEMA_VERSION = 1
+
 MODE_LABELS = {
     "new-feature": "新功能",
     "bug-fix": "修缺陷",
@@ -75,6 +77,16 @@ def parse_first_table(text: str):
 
 def normalize_header(text: str) -> str:
     return _checker_functions().normalize_header(text)
+
+
+def extract_paths(text: str) -> list[str]:
+    """复用检查器的证据路径提取规则，避免报告与门禁各认一套路径。"""
+    return _checker_functions().extract_paths(text)
+
+
+def table_key_values(section):
+    """复用检查器的键值表解析，返回 {键: 值} 与行号。"""
+    return _checker_functions().table_key_values(section)
 
 
 INIT_EPILOG = """三种用法：
@@ -229,6 +241,22 @@ def read_adapter(adapter_path: Optional[str], base_dir: Optional[Path] = None) -
         raise ValueError(f"adapter 不是合法 JSON：{error}") from error
     if not isinstance(data, dict):
         raise ValueError("adapter 顶层必须是 JSON 对象")
+    if data.get("schema") != "verity-adapter/v1":
+        raise ValueError("adapter.schema 必须是 verity-adapter/v1")
+    schema_version = data.get("schema_version")
+    if not isinstance(schema_version, int) or not 1 <= schema_version <= ADAPTER_SCHEMA_VERSION:
+        raise ValueError(
+            f"adapter.schema_version 必须是 1..{ADAPTER_SCHEMA_VERSION} 的整数；"
+            "版本过新时请升级 verity，过旧时按 references/adapter.md 迁移"
+        )
+    minimum = str(data.get("min_verity_version", "0.0.0")).strip()
+    try:
+        required = tuple(int(part) for part in minimum.split("."))
+        current = tuple(int(part) for part in repo_version().split("."))
+    except ValueError:
+        raise ValueError("adapter.min_verity_version 必须是 x.y.z") from None
+    if current < required:
+        raise ValueError(f"adapter 要求 verity >= {minimum}，当前 {repo_version()}")
 
     raw_project = data.get("project")
     if isinstance(raw_project, str):
@@ -743,13 +771,23 @@ def check_manifest(root: Path, ledger: Path, strict: bool) -> int:
             issues.append(f"SHA-256 对不上：{relative}")
         if path.stat().st_size != item.get("bytes"):
             issues.append(f"字节数对不上：{relative}")
-        if strict and not item.get("tracked") and not is_git_tracked(root, path):
+        tracked_now = is_git_tracked(root, path)
+        if strict and not tracked_now:
             issues.append(f"证据未被 git 跟踪，干净检出拿不到：{relative}")
+        if item.get("tracked") is True and not tracked_now:
+            issues.append(f"清单声明 tracked=true，但文件实际未被 git 跟踪：{relative}")
+        if item.get("tracked") is False and tracked_now:
+            issues.append(f"清单声明 tracked=false，但文件实际已被 git 跟踪：{relative}")
     batch_dir = ledger.parent
     for path in collect_batch_files(batch_dir):
         relative = relative_to(root, path)
         if relative not in listed:
             issues.append(f"批次目录有文件未进清单：{relative}")
+    expected_workspace = hashlib.sha256(
+        "\n".join(f"{item.get('path', '')}:{item.get('sha256', '')}" for item in manifest.get("files", [])).encode("utf-8")
+    ).hexdigest()
+    if manifest.get("workspace_hash") != expected_workspace:
+        issues.append("workspace_hash 与清单内的文件哈希重算结果不一致")
     if issues:
         for issue in issues:
             print(f"[FAIL] {issue}", file=sys.stderr)
@@ -820,22 +858,66 @@ def parse_scope_lock(task_text: str) -> tuple[list[str], list[str]]:
     return do_paths, dont_paths
 
 
+def _scope_match(path: str, pattern: str) -> bool:
+    """匹配范围锁路径：支持目录前缀、fnmatch 通配和 **。"""
+    normalized = pattern.strip().strip("`").rstrip("/")
+    if not normalized:
+        return False
+    if path == normalized or path.startswith(normalized + "/"):
+        return True
+    return fnmatch.fnmatch(path, normalized)
+
+
 def check_scope(root: Path, ledger: Path) -> list[str]:
-    """范围锁校验：不做路径一旦出现在改动里就失败；做路径之外只提示。"""
+    """范围锁校验：所有改动必须在“做”内，任何“不做”都失败。
+
+    未声明路径、未跟踪文件和 scope_exception 都按失败处理；例外必须
+    写明路径和理由，不能靠一句“临时文件”放行。
+    """
     task_card = ledger.parent / "task-card.md"
     if not task_card.is_file():
         return ["找不到 task-card.md，无法检查范围锁"]
-    do_paths, dont_paths = parse_scope_lock(task_card.read_text(encoding="utf-8"))
-    if not do_paths and not dont_paths:
-        return ["任务卡缺少“范围锁”表或表为空"]
-    code, output = git_output(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
-    if code != 0:
+    text = task_card.read_text(encoding="utf-8")
+    do_paths, dont_paths = parse_scope_lock(text)
+    if not do_paths:
+        return ["任务卡范围锁没有填写任何“做”路径"]
+    exceptions: list[str] = []
+    for match in re.finditer(r"scope_exception[:：]\s*(\S+)\s+(.+)", text):
+        if len(match.group(2).strip()) < 4:
+            return [f"scope_exception 缺少具体理由：{match.group(1)}"]
+        exceptions.append(match.group(1).strip().strip("`"))
+    status = subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if status.returncode != 0:
         return ["git status 失败，无法检查范围锁"]
-    changed = [entry[3:] for entry in output.split("\0") if len(entry) > 3]
+    output = status.stdout
+    changed: list[str] = []
+    entries = output.split("\0")
+    index = 0
+    while index < len(entries):
+        entry = entries[index]
+        index += 1
+        if len(entry) < 4:
+            continue
+        status_code = entry[:2]
+        path = entry[3:] if len(entry) > 3 and entry[2] == " " else entry[2:]
+        changed.append(path)
+        if "R" in status_code or "C" in status_code:
+            if index < len(entries) and entries[index]:
+                changed.append(entries[index])
+                index += 1
     issues: list[str] = []
     for path in changed:
-        if any(fnmatch.fnmatch(path, pattern) for pattern in dont_paths):
+        if any(_scope_match(path, pattern) for pattern in dont_paths):
             issues.append(f"改动落在“不做”范围：{path}")
+        elif any(_scope_match(path, pattern) for pattern in exceptions):
+            continue
+        elif not any(_scope_match(path, pattern) for pattern in do_paths):
+            issues.append(f"改动未在范围锁“做”中声明：{path}")
     return issues
 
 
@@ -933,6 +1015,14 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             adapter = {}
         else:
             checks.append(("适配层 JSON", adapter.get("schema") == "verity-adapter/v1", str(adapter.get("schema", "缺少 schema"))))
+            checks.append(
+                (
+                    "适配层版本",
+                    isinstance(adapter.get("schema_version"), int)
+                    and 1 <= adapter["schema_version"] <= ADAPTER_SCHEMA_VERSION,
+                    f"schema_version={adapter.get('schema_version', '缺失')}；最低 verity={adapter.get('min_verity_version', '未声明')}",
+                )
+            )
             commands = adapter.get("commands", {})
             total_commands = sum(len(commands.get(key, [])) for key in ("static", "contract", "device", "build"))
             checks.append(("证据命令", total_commands > 0, f"{total_commands} 条"))
@@ -1071,11 +1161,88 @@ def gate_selftest() -> int:
         positive_ok = not clean_issues
         print(f"[{'PASS' if negative_ok else 'FAIL'}] 负对照：删断言/加 skip 被识别")
         print(f"[{'PASS' if positive_ok else 'FAIL'}] 正对照：干净提交不误报")
-        return 0 if negative_ok and positive_ok else 1
+
+        # 范围锁三夹具：未声明未跟踪、已跟踪改动越界、scope_exception 放行。
+        batch = root / "batch"
+        batch.mkdir()
+        (root / "src").mkdir()
+        (root / "src" / "app.py").write_text("value = 1\n", encoding="utf-8")
+        (root / "other.txt").write_text("base\n", encoding="utf-8")
+        card = batch / "task-card.md"
+        card_text = (
+            "# 范围锁夹具\n\n## 范围锁\n\n"
+            "| 类型 | 路径 |\n|---|---|\n| 做 | src/ |\n| 做 | batch/ |\n| 不做 | secrets/ |\n"
+        )
+        card.write_text(card_text, encoding="utf-8")
+        ledger = batch / "07-验收回归清单.md"
+        ledger.write_text("# 夹具\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=root, check=False)
+        subprocess.run(["git", "commit", "-qm", "scope-base"], cwd=root, check=False)
+        (root / "scope-probe.txt").write_text("probe\n", encoding="utf-8")
+        scope_untracked = check_scope(root, ledger)
+        untracked_ok = any("未在范围锁" in issue and "scope-probe.txt" in issue for issue in scope_untracked)
+        print(f"[{'PASS' if untracked_ok else 'FAIL'}] 负对照：未声明的未跟踪文件被范围锁拦住")
+
+        (root / "scope-probe.txt").unlink()
+        (root / "other.txt").write_text("changed\n", encoding="utf-8")
+        scope_outside = check_scope(root, ledger)
+        outside_ok = any("未在范围锁" in issue and "other.txt" in issue for issue in scope_outside)
+        print(f"[{'PASS' if outside_ok else 'FAIL'}] 负对照：已跟踪文件越界被范围锁拦住")
+
+        subprocess.run(["git", "checkout", "--", "other.txt"], cwd=root, check=False)
+        card.write_text(card_text + "\nscope_exception: scope-probe.txt 临时探测文件，核验后删除\n", encoding="utf-8")
+        (root / "scope-probe.txt").write_text("probe\n", encoding="utf-8")
+        scope_exception = check_scope(root, ledger)
+        exception_ok = not scope_exception
+        print(f"[{'PASS' if exception_ok else 'FAIL'}] 正对照：写明路径和理由的 scope_exception 可放行")
+
+        # 证据包清单：篡改 workspace_hash 必须失败，恢复后必须通过。
+        package_dir = root / "pkg"
+        package_dir.mkdir()
+        (package_dir / "evidence").mkdir()
+        (package_dir / "evidence" / "run.log").write_text("ok\n", encoding="utf-8")
+        package_ledger = package_dir / "07-验收回归清单.md"
+        package_ledger.write_text("# 夹具\n", encoding="utf-8")
+        manifest = build_manifest(root, package_ledger)
+        manifest_path = package_dir / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        manifest["workspace_hash"] = "0" * 64
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        forged_manifest_ok = check_manifest(root, package_ledger, strict=False) != 0
+        print(f"[{'PASS' if forged_manifest_ok else 'FAIL'}] 负对照：伪造 manifest.workspace_hash 被识别")
+        manifest["workspace_hash"] = hashlib.sha256(
+            "\n".join(f"{item['path']}:{item['sha256']}" for item in manifest["files"]).encode("utf-8")
+        ).hexdigest()
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        clean_manifest_ok = check_manifest(root, package_ledger, strict=False) == 0
+        print(f"[{'PASS' if clean_manifest_ok else 'FAIL'}] 正对照：未篡改的清单可通过")
+
+        # 适配层版本范围：过新的 schema_version 必须被拒绝。
+        adapter_path = root / "bad-adapter.json"
+        adapter_path.write_text(
+            json.dumps({"schema": "verity-adapter/v1", "schema_version": ADAPTER_SCHEMA_VERSION + 1}),
+            encoding="utf-8",
+        )
+        try:
+            read_adapter(adapter_path)
+            adapter_version_ok = False
+        except ValueError:
+            adapter_version_ok = True
+        print(f"[{'PASS' if adapter_version_ok else 'FAIL'}] 负对照：过新的 adapter.schema_version 被拒绝")
+        return 0 if all([negative_ok, positive_ok, untracked_ok, outside_ok, exception_ok, forged_manifest_ok, clean_manifest_ok, adapter_version_ok]) else 1
+
+
+def _parse_table_values(rows, header):
+    """把 Markdown 表格行转成 {表头: 值} 列表，供报告和统计复用。"""
+    normalized = [normalize_header(cell) for cell in header]
+    result = []
+    for _, row in rows:
+        result.append({normalized[i]: row[i].strip() for i in range(min(len(normalized), len(row)))})
+    return result
 
 
 def ledger_summary(ledger: Path) -> dict:
-    """从 07 账本抓包结论、旅程结论和状态计数，供 report/metrics 使用。"""
+    """从 07 账本抓结论、状态、等级、证据路径和 F 类复盘。"""
     text = ledger.read_text(encoding="utf-8")
     sections = split_sections(text)
     package = find_section(sections, "包结论")
@@ -1083,19 +1250,25 @@ def ledger_summary(ledger: Path) -> dict:
     one_line = ""
     if package is not None:
         package_text = "\n".join(line for _, line in package[2])
-        match = re.search(r"^- 交付结论：\s*(.*)$", package_text, re.MULTILINE)
-        conclusion = match.group(1).strip() if match else ""
-        match = re.search(r"^- 一句话说明：\s*(.*)$", package_text, re.MULTILINE)
-        one_line = match.group(1).strip() if match else ""
+        for line in package_text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("- 交付结论：") and not conclusion:
+                conclusion = stripped.split("：", 1)[1].strip()
+            elif stripped.startswith("- 一句话说明：") and not one_line:
+                one_line = stripped.split("：", 1)[1].strip()
     journey = find_section(sections, "用户旅程")
     journey_conclusion = ""
     if journey is not None:
-        journey_text = "\n".join(line for _, line in journey[2])
-        match = re.search(r"^- 结论：\s*(通过|未通过|阻塞|未覆盖)", journey_text, re.MULTILINE)
-        journey_conclusion = match.group(1) if match else ""
-    table = find_section(sections, "单项验收（证据账本）")
+        for _, line in journey[2]:
+            match = re.match(r"\s*-?\s*结论：\s*(通过|未通过|阻塞|未覆盖)", line)
+            if match:
+                journey_conclusion = match.group(1)
+                break
     counts: dict[str, int] = {}
     levels: dict[str, int] = {}
+    evidence_paths: list[str] = []
+    review_findings = 0
+    table = find_section(sections, "单项验收（证据账本）")
     if table is not None:
         parsed = parse_first_table(table[2])
         if parsed is not None:
@@ -1103,13 +1276,54 @@ def ledger_summary(ledger: Path) -> dict:
             normalized = [normalize_header(cell) for cell in header]
             status_index = next((i for i, item in enumerate(normalized) if item in {"状态", "status"}), None)
             level_index = next((i for i, item in enumerate(normalized) if item in {"证据等级", "等级", "level"}), None)
+            evidence_index = next((i for i, item in enumerate(normalized) if item in {"证据", "证据路径"}), None)
             for _, row in rows:
+                if not any(cell.strip() for cell in row):
+                    continue
                 if status_index is not None and status_index < len(row):
                     status = row[status_index].strip() or "空"
                     counts[status] = counts.get(status, 0) + 1
                 if level_index is not None and level_index < len(row):
                     level = row[level_index].strip() or "空"
                     levels[level] = levels.get(level, 0) + 1
+                if evidence_index is not None and evidence_index < len(row):
+                    evidence_paths.extend(extract_paths(row[evidence_index]))
+    review = find_section(sections, "独立复核")
+    if review is not None:
+        parsed = parse_first_table(review[2])
+        if parsed is not None:
+            _, header, rows = parsed
+            normalized = [normalize_header(cell) for cell in header]
+            verdict_index = next((i for i, item in enumerate(normalized) if item in {"复核结论", "结论"}), None)
+            if verdict_index is not None:
+                for _, row in rows:
+                    if verdict_index < len(row) and row[verdict_index].strip() not in {"", "supports"}:
+                        review_findings += 1
+    f_counts: dict[str, int] = {}
+    review_section = find_section(sections, "复盘")
+    if review_section is not None:
+        parsed = parse_first_table(review_section[2])
+        if parsed is not None:
+            _, header, rows = parsed
+            normalized = [normalize_header(cell) for cell in header]
+            name_index = next((i for i, item in enumerate(normalized) if "f类" in item or item == "类型"), None)
+            count_index = next((i for i, item in enumerate(normalized) if item in {"次数", "数量"}), None)
+            if name_index is not None and count_index is not None:
+                for _, row in rows:
+                    if name_index < len(row) and count_index < len(row):
+                        name = row[name_index].strip()
+                        raw = row[count_index].strip()
+                        match = re.match(r"(F[1-6])", name)
+                        if match and raw.isdigit():
+                            f_counts[match.group(1)] = int(raw)
+    dates: list[str] = []
+    batch = find_section(sections, "批次信息")
+    if batch is not None:
+        values, _ = table_key_values(batch)
+        for key in ("生成日期", "收口时间"):
+            value = values.get(key, "").strip()
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+                dates.append(value)
     return {
         "conclusion": conclusion,
         "one_line": one_line,
@@ -1117,57 +1331,109 @@ def ledger_summary(ledger: Path) -> dict:
         "counts": counts,
         "levels": levels,
         "rows": sum(counts.values()),
+        "evidence_paths": list(dict.fromkeys(evidence_paths)),
+        "review_findings": review_findings,
+        "f_counts": f_counts,
+        "dates": dates,
+        "rework": text.count("返工"),
     }
 
 
 def cmd_report(args: argparse.Namespace) -> int:
-    """两层汇报 / PR 摘要 / 交接摘要；第一层只用三行以内的人话。"""
+    """两层汇报 / PR 摘要 / 交接摘要；PR 与交接必须给出真实证据路径。"""
     ledger = Path(args.ledger).expanduser().resolve()
     if not ledger.is_file():
         print(f"[FAIL] 账本不存在：{ledger}", file=sys.stderr)
         return 1
     summary = ledger_summary(ledger)
+    text = ledger.read_text(encoding="utf-8")
+    sections = split_sections(text)
+    risk_values: dict[str, str] = {}
+    risk = find_section(sections, "发布风险")
+    if risk is not None:
+        risk_values, _ = table_key_values(risk)
     if args.kind == "two-layer":
         conclusion = summary["conclusion"] or "未写结论"
-        journey = summary["journey"] or "未写旅程结论"
-        print(f"这批的交付结论是“{conclusion}”，旅程卡结论是“{journey}”。")
-        print(f"账本共 {summary['rows']} 条验收项，证据等级分布：{summary['levels'] or '空'}。")
-        print(f"一句话说明：{summary['one_line'] or '未填写'}")
+        ok = conclusion == "通过" and summary["journey"] == "通过"
+        print(f"这批{'可以交付' if ok else '还不能交付'}，交付结论是“{conclusion}”。")
+        print(f"共 {summary['rows']} 条验收项，{summary['levels'].get('A', 0)} 条是关键项。")
+        print("下一步：" + ("按账本收口并归档证据。" if ok else "先补齐未通过项或阻塞举证，再重跑门禁。"))
         print()
         print(f"账本：{ledger}")
+        print(f"用户旅程结论：{summary['journey'] or '未写'}")
         print(f"状态计数：{summary['counts']}")
-        print("下一步：结论不是“通过”时，先补证据或写阻塞举证单，不能改口径。")
+        print(f"证据：{', '.join(summary['evidence_paths']) or '未登记'}")
         return 0
+    if not summary["evidence_paths"]:
+        print("[FAIL] 报告无法生成：账本没有可引用的证据路径", file=sys.stderr)
+        return 1
+    unresolved = [
+        item for item in summary["evidence_paths"]
+        if not (ledger.parent / item).resolve().is_file() and not (ledger.parent.parent / item).resolve().is_file()
+    ]
+    if unresolved:
+        print("[FAIL] 报告引用的证据路径不存在：" + "、".join(unresolved), file=sys.stderr)
+        return 1
     if args.kind == "pr":
-        print("## 交付摘要")
-        print()
-        print(f"- 结论：{summary['conclusion'] or '未写'}")
-        print(f"- 旅程：{summary['journey'] or '未写'}")
-        print(f"- 验收项：{summary['rows']} 条；状态：{summary['counts']}")
-        print()
-        print("## 风险与回滚")
-        print()
-        print("- 风险：见 07「发布风险」段；未填时按高风险处理。")
-        print("- 回滚：见 07「发布风险」段的回滚点与验证读数。")
+        if risk_values:
+            risk_line = (
+                f"风险：{risk_values.get('影响范围', '未写')}；"
+                f"回滚：{risk_values.get('回滚点', '未写')}；"
+                f"验证：{risk_values.get('回滚是否验证', '未写')}"
+            )
+        else:
+            risk_line = "风险：未填写；回滚：未填写，发布前必须补齐"
+        print(f"- 结论：{summary['conclusion'] or '未写'}；旅程：{summary['journey'] or '未写'}；验收项：{summary['rows']} 条")
+        print(f"- 证据：{', '.join(summary['evidence_paths'])}")
+        print(f"- {risk_line}")
         return 0
     print("# 交接摘要")
     print()
     print(f"- 当前结论：{summary['conclusion'] or '未写'}")
     print(f"- 用户旅程：{summary['journey'] or '未写'}")
     print(f"- 账本：{ledger}")
+    print(f"- 证据：{', '.join(summary['evidence_paths'])}")
     print(f"- 状态计数：{summary['counts']}")
     print("- 未完成项：看「欠账」「阻塞举证」两段；为空才可交接。")
     print("- 下一步：按 07「完成审计」缺哪条补哪条。")
     return 0
 
 
+def _real_ledgers(root: Path) -> list[Path]:
+    """只返回真实批次账本：有任务卡、旅程卡、v2 marker，排除模板与 bad-* 夹具。"""
+    result = []
+    for ledger in sorted(root.rglob("07-*.md")):
+        if "templates" in ledger.parts or any(part.startswith("bad-") for part in ledger.parts):
+            continue
+        if not (ledger.parent / "task-card.md").is_file():
+            continue
+        if not list(ledger.parent.glob("journey-*.md")):
+            continue
+        if "acceptance-evidence: v1" not in ledger.read_text(encoding="utf-8"):
+            continue
+        result.append(ledger)
+    return result
+
+
+def _days_between(start: str, end: str) -> Optional[int]:
+    """计算两个 YYYY-MM-DD 之间的自然日；格式不对返回 None。"""
+    try:
+        return (date.fromisoformat(end) - date.fromisoformat(start)).days
+    except ValueError:
+        return None
+
+
 def cmd_metrics(args: argparse.Namespace) -> int:
-    """统计批次数、行数、结论和证据等级，输出 JSON 与一行摘要。"""
+    """统计真实批次的规模、结论、A 级占比、F 类、复核发现与返工。"""
     root = Path(args.dir).expanduser().resolve()
-    ledgers = sorted(root.rglob("07-*.md"))
+    ledgers = _real_ledgers(root)
     total_rows = 0
     conclusions: dict[str, int] = {}
     levels: dict[str, int] = {}
+    f_counts = {f"F{i}": 0 for i in range(1, 7)}
+    review_findings = 0
+    rework = 0
+    durations: list[int] = []
     for ledger in ledgers:
         summary = ledger_summary(ledger)
         total_rows += summary["rows"]
@@ -1175,15 +1441,53 @@ def cmd_metrics(args: argparse.Namespace) -> int:
         conclusions[conclusion] = conclusions.get(conclusion, 0) + 1
         for level, count in summary["levels"].items():
             levels[level] = levels.get(level, 0) + count
+        for name, count in summary["f_counts"].items():
+            f_counts[name] = f_counts.get(name, 0) + count
+        review_findings += summary["review_findings"]
+        rework += summary["rework"]
+        if len(summary["dates"]) >= 2:
+            days = _days_between(summary["dates"][0], summary["dates"][-1])
+            if days is not None:
+                durations.append(days)
+    durations.sort()
+    median_days = durations[len(durations) // 2] if durations else 0
     payload = {
         "ledgers": len(ledgers),
         "rows": total_rows,
         "conclusions": conclusions,
         "levels": levels,
         "a_ratio": round(levels.get("A", 0) / total_rows, 4) if total_rows else 0,
+        "b_plus_ratio": round(levels.get("B+", 0) / total_rows, 4) if total_rows else 0,
+        "b_ratio": round(levels.get("B", 0) / total_rows, 4) if total_rows else 0,
+        "c_ratio": round(levels.get("C", 0) / total_rows, 4) if total_rows else 0,
+        "f_counts": f_counts,
+        "f_total": sum(f_counts.values()),
+        "review_findings": review_findings,
+        "rework": rework,
+        "median_days": median_days,
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2))
-    print(f"摘要：{payload['ledgers']} 份账本，{total_rows} 行，A 级占比 {payload['a_ratio']:.0%}")
+    print(
+        f"摘要：{payload['ledgers']} 份真实账本，{total_rows} 行；"
+        f"A/B+/B/C 占比 {payload['a_ratio']:.0%}/{payload['b_plus_ratio']:.0%}/"
+        f"{payload['b_ratio']:.0%}/{payload['c_ratio']:.0%}；"
+        f"F 类 {payload['f_total']} 次，复核发现 {review_findings} 条，返工 {rework} 次；"
+        f"验收周期中位数 {median_days} 天"
+    )
+    if getattr(args, "selftest", False):
+        # 固定夹具的断言：不允许把模板或 bad-* 当账本，且 F 类必须完整输出。
+        ratio_sum = (
+            payload["a_ratio"] + payload["b_plus_ratio"] + payload["b_ratio"] + payload["c_ratio"]
+        )
+        ok = (
+            payload["ledgers"] >= 2
+            and payload["rows"] >= 6
+            and set(payload["f_counts"]) == {f"F{i}" for i in range(1, 7)}
+            and set(payload["levels"]).issubset({"A", "B+", "B", "C"})
+            and 0 <= ratio_sum <= 1.0001
+        )
+        print(f"[{'PASS' if ok else 'FAIL'}] metrics 自测：真实批次计数与 F1–F6 输出")
+        return 0 if ok else 1
     return 0
 
 
@@ -1197,6 +1501,14 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
     if "覆盖 AC" in text and "## 证据身份" in text and "## 独立复核" in text:
         print("已经是 schema 2，无需迁移。")
         return 0
+    legacy_header = "| ID | 验收项 | 判据 | 最低证据 | 证据等级 | 证据（文件或命令读数） | 状态 | 复核 |"
+    if legacy_header in text:
+        print(
+            "[FAIL] 这是八列 legacy 账本，缺少覆盖 AC、用户路径、证据身份和完成审计，"
+            "无法安全自动迁移；请新建 schema 2 批次并按 docs/optimization-matrix.md 的迁移说明重新取证。",
+            file=sys.stderr,
+        )
+        return 1
     lines = text.splitlines()
     out: list[str] = []
     old_header = "| 验收项 ID | 用户路径 | 预期 | 证据类型 | 证据 | 产出者 | 置信度 | 时间 | commit | 状态 |"
@@ -1326,8 +1638,9 @@ def build_parser() -> argparse.ArgumentParser:
     report_parser.add_argument("--kind", choices=("two-layer", "pr", "handoff"), default="two-layer")
     report_parser.set_defaults(handler=cmd_report)
 
-    metrics_parser = subparsers.add_parser("metrics", help="统计账本行数、结论和证据等级")
+    metrics_parser = subparsers.add_parser("metrics", help="统计真实批次数、结论、等级与 F 类")
     metrics_parser.add_argument("--dir", default=".", help="扫描目录，默认当前目录")
+    metrics_parser.add_argument("--selftest", action="store_true", help="用仓库夹具断言统计口径")
     metrics_parser.set_defaults(handler=cmd_metrics)
 
     upgrade_parser = subparsers.add_parser("upgrade", help="把旧十列账本迁到 schema 2 十三列")

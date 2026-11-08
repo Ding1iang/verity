@@ -674,6 +674,7 @@ def check_coverage(
                                     )
                                 )
                             task_card = batch_dir / task_card_filename
+                            task_text = ""
                             if not task_card.is_file():
                                 issues.append(
                                     Issue("E_TASK_CARD_MISSING", f"批次目录缺少 {task_card_filename}：{batch_dir}", number)
@@ -708,11 +709,20 @@ def check_coverage(
                                             number,
                                         )
                                     )
-                            if not list(batch_dir.glob("journey-*.md")):
+                            journey_cards = list(batch_dir.glob("journey-*.md"))
+                            if not journey_cards:
                                 issues.append(
                                     Issue(
                                         "E_JOURNEY_CARD_MISSING",
                                         f"批次目录缺少 journey-*.md 旅程卡：{batch_dir}",
+                                        number,
+                                    )
+                                )
+                            elif "跨区域" in task_text and len(journey_cards) < 3:
+                                issues.append(
+                                    Issue(
+                                        "E_JOURNEY_CARD_COUNT",
+                                        f"跨区域批次至少需要 3 张旅程卡，当前只有 {len(journey_cards)} 张：{batch_dir}",
                                         number,
                                     )
                                 )
