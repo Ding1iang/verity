@@ -1262,13 +1262,41 @@ def run_selftest() -> int:
     return 0
 
 
+def coverage_from_adapter(args: argparse.Namespace) -> Optional[Path]:
+    """未显式给出总表时，按适配层 paths.coverage_master 推导绝对路径。
+
+    适配层里的路径以项目根为基准；项目根优先取 --project-root/--root，
+    否则回退到 project.root。推导失败返回 None，由调用方给出用法错误。
+    """
+    adapter_path = Path(args.adapter).expanduser()
+    if not adapter_path.is_file():
+        return None
+    data, _issues = load_adapter(adapter_path)
+    if data is None:
+        return None
+    paths = data.get("paths") if isinstance(data.get("paths"), dict) else {}
+    configured = str(paths.get("coverage_master", "")).strip()
+    if not configured:
+        return None
+    if args.project_root:
+        project_root = Path(args.project_root).expanduser().resolve()
+    else:
+        project_root = adapter_project_root(adapter_path.resolve(), data)
+    return project_root / configured
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="检查 verity 覆盖总表：模块齐全、07 真实、唯一认领、不适用有理由、数量对账"
     )
-    parser.add_argument("coverage", nargs="?", help="覆盖总表路径")
+    parser.add_argument("coverage", nargs="?", help="覆盖总表路径；省略时从适配层 paths.coverage_master 推导")
     parser.add_argument("--adapter", help="项目适配层 JSON；省略时从总表所在目录向上自动查找")
-    parser.add_argument("--project-root", help="项目根目录；省略时取适配层 project.root 或 git 根")
+    parser.add_argument(
+        "--project-root",
+        "--root",
+        dest="project_root",
+        help="项目根目录；--root 为同义别名，省略时取适配层 project.root 或 git 根",
+    )
     parser.add_argument("--ledger-root", help="07 根目录；省略时取适配层 paths.ledger_root")
     parser.add_argument("--json", action="store_true", help="以 JSON 输出结果，便于 CI 消费")
     parser.add_argument("--selftest", action="store_true", help="运行内置好/坏样本自测")
@@ -1277,8 +1305,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.selftest:
         return run_selftest()
     if not args.coverage:
+        derived = coverage_from_adapter(args) if args.adapter else None
+        if derived is not None:
+            args.coverage = str(derived)
+    if not args.coverage:
         parser.print_usage(sys.stderr)
-        print("用法错误：请指定覆盖总表路径，或使用 --selftest", file=sys.stderr)
+        print("用法错误：请指定覆盖总表路径、配置适配层 paths.coverage_master，或使用 --selftest", file=sys.stderr)
         return 2
     return run_check(args)
 
