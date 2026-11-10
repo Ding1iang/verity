@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import date
 from pathlib import Path
 from textwrap import dedent
 from typing import Iterable
@@ -221,12 +222,19 @@ def v2_case(
     subprocess.run(["git", "commit", "-qm", "fixture"], cwd=case_dir, check=False)
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=case_dir, capture_output=True, text=True, check=False).stdout.strip()
     text = re.sub(r"\b[0-9a-f]{40}\b", commit, text)
+    # 夹具的提交是运行时生成的，底样却写死 2026-11-08；隔天跑就会出现
+    # “证据日期早于 commit 日期”。这里把底样的日期整体平移到今天，
+    # 复核执行时间固定为当天 00:10，避免“晚于当前时间”的假红。
+    today = date.today().isoformat()
+    text = text.replace("2026-11-08T17:39:36", f"{today}T00:10:00")
+    text = text.replace("2026-11-08", today)
     # 复核表的“复跑 HEAD”是短哈希，单独替换，确保夹具绑定自己的提交。
     text = text.replace("| b60b207 |", f"| {commit[:7]} |")
     log_path = case_dir / "evidence/ev-runs.log"
     if log_path.is_file():
         record = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
         record["head"] = commit
+        record["time"] = f"{date.today().isoformat()}T00:10:00"
         if log_mutate is not None:
             log_mutate(record)
         log_path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -434,7 +442,14 @@ def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
             v2_case(
                 root,
                 "v2-commit-workspace",
-                lambda text: re.sub(r"\| 2026-11-08 \| [^|]+ \| 通过 \|", "| 2026-11-08 | 工作区 | 通过 |", text, count=1),
+                # 日期由 v2_case 平移到运行当天，这里按“任意日期”匹配，
+                # 否则夹具只在 2026-11-08 当天才命中目标规则。
+                lambda text: re.sub(
+                    r"\| \d{4}-\d{2}-\d{2} \| [^|]+ \| 通过 \|",
+                    lambda match: f"| {match.group(0).split('|')[1].strip()} | 工作区 | 通过 |",
+                    text,
+                    count=1,
+                ),
             ),
             "E_COMMIT",
         )

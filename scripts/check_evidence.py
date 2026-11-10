@@ -602,12 +602,45 @@ def has_readable_image(evidence: str, root: Path, ledger_dir: Path) -> bool:
     return False
 
 
+# 记录类目录：文档、验收账本、测试材料都属于“记录”，不是受控实现。
+# 账本和证据会在取证后继续补写，把它们算进工作区指纹等于“一写账本就
+# 作废自己的证据”，因此一律排除。受控实现变化才让旧证据失效。
+RECORD_DIR_PREFIXES = ("docs/", "acceptance/", "dist/")
+
+
+def _is_record_path(relative: str, excluded: Optional[str]) -> bool:
+    """判断路径是否属于记录类（不计入工作区指纹）。"""
+    if excluded and (relative == excluded or relative.startswith(excluded + "/")):
+        return True
+    if relative.startswith(".git/") or any(relative.startswith(prefix) for prefix in RECORD_DIR_PREFIXES):
+        return True
+    # 账本与清单本身随取证更新；证据文件由证据身份表的 SHA-256 单独约束。
+    if Path(relative).name.startswith("07-") or Path(relative).name == "manifest.json":
+        return True
+    if relative.startswith("evidence/") or "/evidence/" in relative:
+        return True
+    return False
+
+
+def _fingerprint_bytes(payload: bytes) -> bytes:
+    """文本按 LF 归一后再入指纹。
+
+    git 的内容模型是 LF，工作区里的 CRLF 只是检出设置（core.autocrlf）的
+    产物。不归一的话，“同一份提交在两台机器上指纹不同”，干净检出与本地
+    工作区会互相判对方作废。
+    """
+    if b"\0" in payload[:8192]:
+        return payload
+    return payload.replace(b"\r\n", b"\n")
+
+
 def workspace_fingerprint(root: Path, exclude_dir: Optional[Path] = None) -> Optional[str]:
     """按 git 跟踪文件内容计算工作区指纹。
 
-    只算已跟踪文件，避免未跟踪的评审记录改变结果；批次账本所在目录
-    默认排除，防止“写账本”本身反过来改变指纹。取证后任意受控文件
-    内容变化，指纹就会不同，从而让旧证据失效。
+    只算已跟踪文件，避免未跟踪的评审记录改变结果；账本所在目录与记录类
+    目录（docs/、acceptance/、evidence/、07-*.md、manifest.json）不计入，
+    所以补写账本、另一份账本的说明、批次文档都不会让本批证据失效。取证后
+    受控实现文件内容变化，指纹就会不同，从而让旧证据失效。
     """
     excluded = None
     if exclude_dir is not None:
@@ -636,15 +669,7 @@ def workspace_fingerprint(root: Path, exclude_dir: Optional[Path] = None) -> Opt
         ]
     digest = hashlib.sha256()
     for relative in names:
-        if excluded and (relative == excluded or relative.startswith(excluded + "/")):
-            continue
-        if relative.startswith(".git/") or relative.startswith("dist/"):
-            continue
-        if Path(relative).name.startswith("07-") or Path(relative).name == "manifest.json":
-            continue
-        # 证据文件本来就会在取证过程中追加；它们由证据身份表的 SHA-256 单独约束，
-        # 不纳入工作区指纹，否则“补一条证据”会把刚记录的指纹反过来作废。
-        if relative.startswith("evidence/") or "/evidence/" in relative:
+        if _is_record_path(relative, excluded):
             continue
         path = root / relative
         if not path.is_file():
@@ -652,7 +677,7 @@ def workspace_fingerprint(root: Path, exclude_dir: Optional[Path] = None) -> Opt
         digest.update(relative.encode("utf-8", "surrogateescape"))
         digest.update(b"\0")
         try:
-            digest.update(path.read_bytes())
+            digest.update(_fingerprint_bytes(path.read_bytes()))
         except OSError:
             continue
         digest.update(b"\0")

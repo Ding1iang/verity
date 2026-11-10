@@ -523,7 +523,12 @@ def check_coverage(
     declared_names = {normalize_key(module["name"]): module for module in modules if module["name"]}
     matched_modules: set[str] = set()
 
-    claimed: dict[Path, int] = {}
+    # 值记录 (首次认领行号, 归一化批次名)，用于区分“同批次跨模块”与“跨批次挂错”。
+    claimed: dict[Path, tuple[int, str]] = {}
+    # 已统计过结论的 07；同一份账本被多行认领时只算一次。
+    counted_ledgers: set[Path] = set()
+    # 缺失行登记的计划账本路径，用于“账本 N/N”的分母。
+    planned: set[Path] = set()
 
     for number, row in rows:
         if len(row) != len(header):
@@ -632,15 +637,20 @@ def check_coverage(
                                 )
                             )
                     if ledger_path in claimed:
-                        issues.append(
-                            Issue(
-                                "E_LEDGER_DUP",
-                                f"07 被重复认领：{ledger_raw}（第 {claimed[ledger_path]} 行已认领）",
-                                number,
+                        # 同一个批次可以跨多个模块：一份 07 允许被同一批次的多行
+                        # 认领（一本账管多模块）。跨批次重复认领才是真正的挂错。
+                        previous_number, previous_batch = claimed[ledger_path]
+                        if previous_batch != normalize_key(batch):
+                            issues.append(
+                                Issue(
+                                    "E_LEDGER_DUP",
+                                    f"07 被跨批次重复认领：{ledger_raw}"
+                                    f"（第 {previous_number} 行认领的批次是“{previous_batch}”，本行是“{batch}”）",
+                                    number,
+                                )
                             )
-                        )
                     else:
-                        claimed[ledger_path] = number
+                        claimed[ledger_path] = (number, normalize_key(batch))
 
                     # 批次包互链：目录、任务卡、07 必须能互相找到，且任务卡/07
                     # 都写明模块 ID 和批次目录名，避免“账本存在但挂错批次”。
@@ -769,14 +779,19 @@ def check_coverage(
                                     )
                                 )
 
-                    conclusion, _ = read_conclusion(ledger_path)
-                    conclusion_counts[conclusion] += 1
+                    # 一份 07 可以被同一批次的多行认领（跨模块），但结论只能
+                    # 计一次，否则“通过 5”会被同一份账本重复放大。
+                    if ledger_path not in counted_ledgers:
+                        counted_ledgers.add(ledger_path)
+                        conclusion, _ = read_conclusion(ledger_path)
+                        conclusion_counts[conclusion] += 1
 
         elif coverage_status == "缺失":
             if is_empty(ledger_raw):
                 issues.append(Issue("E_LEDGER_MISSING", "缺失行也要写计划中的 07 路径", number))
             else:
                 ledger_path = resolve_path(ledger_raw, project_root)
+                planned.add(ledger_path)
                 if ledger_path.exists():
                     issues.append(
                         Issue(
@@ -845,8 +860,9 @@ def check_coverage(
                     )
                 )
 
+    # “账本 N/N”按文件数算，不按行数算：一份账本服务多个模块时不能重复计数。
     ledgers_present = sum(1 for ledger_path in claimed if ledger_path.is_file())
-    ledgers_expected = status_counts.get("已覆盖", 0) + status_counts.get("缺失", 0)
+    ledgers_expected = len({path for path in claimed}) + len(planned - set(claimed))
     return CoverageResult(
         issues=issues,
         status_counts=dict(status_counts),
@@ -1101,6 +1117,14 @@ def build_selftest_project(root: Path, case: SelftestCase) -> Path:
     rows = base_rows()
     case.mutate(rows, project)
 
+    # 同一批次目录可能被多个模块行共用（跨模块批次一本账）；互链文本必须
+    # 写全该批次声称的所有模块，否则互链检查会把合法写法判成“没引用模块”。
+    modules_by_dir: dict[str, list[tuple[str, str]]] = {}
+    for row in rows:
+        if len(row) < 9:
+            continue
+        modules_by_dir.setdefault(row[1], []).append((row[3], row[2]))
+
     # 每个批次先建完整包：task-card / 07 / blocking-form / evidence。
     # 07 只给“已覆盖”行建；缺失行故意留空，供缺账本检查命中。
     for row in rows:
@@ -1109,9 +1133,13 @@ def build_selftest_project(root: Path, case: SelftestCase) -> Path:
         batch_dir = project / row[1]
         batch_dir.mkdir(parents=True, exist_ok=True)
         module_id, module_name = row[3], row[2]
+        batch_modules = modules_by_dir.get(row[1], [(module_id, module_name)])
+        module_rows = "".join(
+            f"| 模块 | {name} |\n| 模块 ID | {mid} |\n" for mid, name in batch_modules
+        )
         (batch_dir / "task-card.md").write_text(
             f"# 任务卡：{batch_dir.name} / {module_name}\n\n"
-            f"| 字段 | 内容 |\n|---|---|\n| 模块 | {module_name} |\n| 模块 ID | {module_id} |\n\n"
+            f"| 字段 | 内容 |\n|---|---|\n{module_rows}\n"
             "[07-验收回归清单.md](07-验收回归清单.md)\n",
             encoding="utf-8",
         )
@@ -1129,8 +1157,8 @@ def build_selftest_project(root: Path, case: SelftestCase) -> Path:
                     f"# 07 验收回归清单：{batch_dir.name}\n\n"
                     "<!-- acceptance-evidence: v1 -->\n\n"
                     "[task-card.md](task-card.md)\n\n"
-                    f"模块 ID：{module_id}\n\n"
-                    "## 包结论\n\n- 交付结论：通过\n- 一句话说明：自测样本\n- 证据索引：—\n\n"
+                    + "".join(f"模块 ID：{mid}\n\n" for mid, _name in batch_modules)
+                    + "## 包结论\n\n- 交付结论：通过\n- 一句话说明：自测样本\n- 证据索引：—\n\n"
                     "## 单项验收（证据账本）\n\n"
                     "| 验收项 ID | 用户路径 | 预期 | 证据类型 | 证据 | 产出者 | 置信度 | 时间 | commit | 状态 |\n"
                     "|---|---|---|---|---|---|---|---|---|---|\n"
@@ -1171,7 +1199,24 @@ def run_selftest() -> int:
         ),
         SelftestCase(
             "bad-duplicate-ledger",
-            "坏样本·重复 07",
+            "坏样本·跨批次重复 07",
+            lambda rows, project: rows[1].__setitem__(6, rows[0][6]),
+            expected_codes=("E_LEDGER_DUP",),
+        ),
+        # 同批次跨模块共用一份 07 是合法写法：一个批次就是一本账。
+        SelftestCase(
+            "good-shared-ledger",
+            "好样本·同批次多模块共用一份 07",
+            lambda rows, project: (
+                rows[1].__setitem__(0, rows[0][0]),
+                rows[1].__setitem__(1, rows[0][1]),
+                rows[1].__setitem__(6, rows[0][6]),
+            ),
+        ),
+        # 同一份 07 被两个批次认领才必须报错。
+        SelftestCase(
+            "bad-ledger-two-batches",
+            "坏样本·同一份 07 被两个批次认领",
             lambda rows, project: rows[1].__setitem__(6, rows[0][6]),
             expected_codes=("E_LEDGER_DUP",),
         ),

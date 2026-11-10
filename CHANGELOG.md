@@ -2,6 +2,18 @@
 
 本文件记录 verity 的对外变更。版本号遵循语义化版本（`MAJOR.MINOR.PATCH`），格式参考 Keep a Changelog。
 
+## [v1.3.1] - 2026-11-10
+
+修正两处会让“证据自己作废自己”的规则缺陷：跨模块批次被拆成多本 07，以及工作区指纹把文档和账本也算进受控范围。
+
+### 修复
+
+- `scripts/check_evidence.py`：`workspace_fingerprint` 只算受控实现文件（代码、脚本、模板、配置），`docs/`、`acceptance/`、`evidence/`、`07-*.md`、`manifest.json` 等记录类路径不计入；文本按 LF 归一后再入指纹，消除 CRLF 检出与干净检出的互相作废。
+- `scripts/check_coverage.py`：同一份 07 允许被同一批次的多行认领（一个批次跨多个模块，一本账管多模块）；只有跨批次共用才报 `E_LEDGER_DUP`。结论计数与“账本 N/N”按 07 文件数去重，同一份账本不会把通过数放大。
+- `scripts/check_coverage.py`：自测增到 11 例，新增“同批次多模块共用一份 07”正向样本与“同一份 07 被两个批次认领”负向样本。
+- `scripts/anti_examples.py`：夹具日期随运行日期平移，修复跑日期一变就整批假红的问题。
+- `references/acceptance.md`、`references/adapter.md`、`references/evidence.md`、`templates/coverage-master.md`：明确“一个批次一本账、跨模块写进同一本”“同批次多模块可共用 07”“workspace_hash 只覆盖受控实现”的口径。
+
 ## [v1.3.0] - 2026-11-08
 
 v1.3.0 落地 32 项工作流优化：任务卡前置盘问与快慢车道、AC/旅程/账本三向映射、结构化完成审计、产物身份、旧证据失效、独立复核、本地完成线闸门、防绕过、证据包清单、阻塞举证四维、红队夹具、doctor/gate/manifest/report/metrics/upgrade/scan 工具链。
