@@ -12,6 +12,7 @@
 - `scripts/check_coverage.py`：同一份 07 允许被同一批次的多行认领（一个批次跨多个模块，一本账管多模块）；只有跨批次共用才报 `E_LEDGER_DUP`。结论计数与“账本 N/N”按 07 文件数去重，同一份账本不会把通过数放大。
 - `scripts/check_coverage.py`：自测增到 11 例，新增“同批次多模块共用一份 07”正向样本与“同一份 07 被两个批次认领”负向样本。
 - `scripts/anti_examples.py`：夹具日期随运行日期平移，修复跑日期一变就整批假红的问题。
+- `scripts/verity.py`（`check_scope`）、`scripts/check_evidence.py`（`stale_implementation_changes`）：项目在 git 仓库子目录里（monorepo）时，先把 `git status`/`git diff` 的仓库根相对路径剥掉项目前缀再比对。修复两类静默失效：范围锁把所有改动判成“未声明”、以及“证据绑定提交之后实现又改过”从来不报红。
 - `references/acceptance.md`、`references/adapter.md`、`references/evidence.md`、`templates/coverage-master.md`：明确“一个批次一本账、跨模块写进同一本”“同批次多模块可共用 07”“workspace_hash 只覆盖受控实现”的口径。
 
 ## [v1.3.0] - 2026-11-08
@@ -35,7 +36,7 @@ v1.3.0 落地 32 项工作流优化：任务卡前置盘问与快慢车道、AC/
 ### 验证
 
 - `python3 scripts/selftest.py`：5/5 通过。
-- `python3 scripts/anti_examples.py`：49/49 夹具按预期报错。
+- `python3 scripts/anti_examples.py`：50/50 夹具按预期报错。
 - `python3 scripts/check_coverage.py --selftest`：9/9 通过。
 - `python3 scripts/verity.py gate --selftest`：正负对照通过。
 - `python3 scripts/verity.py gate --root . --ledger examples/04-project-v1/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run`：5/5 通过；05 为 5/5（未生成 manifest 时清单步骤跳过）。

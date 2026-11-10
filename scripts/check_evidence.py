@@ -798,11 +798,42 @@ def git_changed_paths(root: Path, base: str, head: str = "HEAD") -> tuple[list[s
     return [line.strip() for line in process.stdout.splitlines() if line.strip()], None
 
 
-def stale_implementation_changes(paths: Iterable[str]) -> list[str]:
-    """返回 base..HEAD 中属于实现/规则文件的路径。"""
+def project_prefix(root: Path) -> str:
+    """返回项目根相对 git 仓库根的前缀（带结尾斜杠，仓库根即项目根时为空）。
+
+    git diff 给的是**仓库根**相对路径，而实现/规则前缀是**项目根**相对写法。
+    项目在仓库子目录（monorepo）时，不剥前缀就永远匹配不到，导致“证据绑定
+    提交之后实现又改过”这条检查静默失效。
+    """
+    code, output = git_output(root, "rev-parse", "--show-prefix")
+    return output.strip() if code == 0 else ""
+
+
+def git_output(root: Path, *args: str) -> tuple[int, str]:
+    """执行 git 并返回 (退出码, stdout)；失败时 stdout 为空串。"""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return 1, ""
+    return result.returncode, result.stdout
+
+
+def stale_implementation_changes(paths: Iterable[str], prefix: str = "") -> list[str]:
+    """返回 base..HEAD 中属于实现/规则文件的路径。
+
+    prefix 是项目根相对仓库根的前缀；传入后会先剥掉前缀再比对，避免
+    monorepo 里 `notes-hap/scripts/...` 匹配不到 `scripts/` 而静默失效。
+    """
     changed: list[str] = []
     for path in paths:
         normalized = path.replace("\\", "/")
+        if prefix and normalized.startswith(prefix):
+            normalized = normalized[len(prefix):]
         if normalized in IMPLEMENTATION_CHANGE_FILES:
             changed.append(normalized)
             continue
@@ -2251,7 +2282,7 @@ def check_v1_ledger(
                 )
             )
         else:
-            stale_paths = stale_implementation_changes(changed)
+            stale_paths = stale_implementation_changes(changed, project_prefix(root))
             if stale_paths:
                 preview = "、".join(stale_paths[:5])
                 more = f" 等 {len(stale_paths)} 个文件" if len(stale_paths) > 5 else ""

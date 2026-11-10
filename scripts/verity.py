@@ -858,6 +858,29 @@ def parse_scope_lock(task_text: str) -> tuple[list[str], list[str]]:
     return do_paths, dont_paths
 
 
+def _project_prefix(root: Path) -> str:
+    """返回项目根相对 git 仓库根的前缀（带结尾斜杠）。
+
+    git status / git diff 给出的路径基准是**仓库根**，而范围锁、证据路径
+    写的是**项目根**。项目根就是仓库根时前缀为空；项目在仓库的子目录里
+    （monorepo）时前缀是子目录名，不剥掉的话两边永远对不上，范围锁会
+    把所有改动都判成“未声明”。
+    """
+    code, top = git_output(root, "rev-parse", "--show-toplevel")
+    if code != 0 or not top.strip():
+        return ""
+    prefix = git_output(root, "rev-parse", "--show-prefix")[1].strip()
+    return prefix
+
+
+def _to_project_relative(root: Path, path: str) -> str:
+    """把仓库根相对的路径换算成项目根相对的路径。"""
+    prefix = _project_prefix(root)
+    if prefix and path.startswith(prefix):
+        return path[len(prefix):]
+    return path
+
+
 def _scope_match(path: str, pattern: str) -> bool:
     """匹配范围锁路径：支持目录前缀、fnmatch 通配和 **。"""
     normalized = pattern.strip().strip("`").rstrip("/")
@@ -905,10 +928,10 @@ def check_scope(root: Path, ledger: Path) -> list[str]:
             continue
         status_code = entry[:2]
         path = entry[3:] if len(entry) > 3 and entry[2] == " " else entry[2:]
-        changed.append(path)
+        changed.append(_to_project_relative(root, path))
         if "R" in status_code or "C" in status_code:
             if index < len(entries) and entries[index]:
-                changed.append(entries[index])
+                changed.append(_to_project_relative(root, entries[index]))
                 index += 1
     issues: list[str] = []
     for path in changed:
@@ -1104,9 +1127,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     matrix = root / "docs" / "optimization-matrix.md"
     if matrix.is_file():
         expected_counts = {
-            root / "README.md": ("49 个反例", "60 / 60"),
-            root / "CHANGELOG.md": ("49/49", "60/60"),
-            matrix: ("49/49",),
+            root / "README.md": ("50 个反例", "60 / 60"),
+            root / "CHANGELOG.md": ("50/50", "60/60"),
+            matrix: ("50/50",),
         }
         missing_counts: list[str] = []
         for file, needles in expected_counts.items():

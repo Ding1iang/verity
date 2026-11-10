@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""生成并运行 49 类反例，逐条断言检查器报出指定错误码。
+"""生成并运行 50 类反例，逐条断言检查器报出指定错误码。
 
 这个脚本是给 verifier 用的“反例预备清单”执行器：所有样本在临时目录里
 即时生成，不依赖仓库里的示例文件，也不写入用户数据。每个样本都故意只
@@ -8,7 +8,7 @@
 用法：
     python3 scripts/anti_examples.py
 
-退出码：0 = 49 类夹具全部按预期报错；1 = 至少一类没有报出指定错误码。
+退出码：0 = 50 类夹具全部按预期报错；1 = 至少一类没有报出指定错误码。
 """
 
 from __future__ import annotations
@@ -694,6 +694,7 @@ def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
     subprocess.run(["git", "add", "-A"], cwd=stale_case, check=False)
     subprocess.run(["git", "commit", "-qm", "fixture: implementation after evidence"], cwd=stale_case, check=False)
     cases.append(("v2-stale-evidence-scripts", stale_ledger, "E_STALE_EVIDENCE"))
+
     return cases
 
 
@@ -832,6 +833,18 @@ def main() -> int:
             else:
                 failures.append(name)
                 print(f"[FAIL] {name}: issues={count} {detail}")
+
+    # 纯函数级回归：monorepo 里项目前缀必须被剥掉，否则范围锁与旧证据检测静默失效。
+    prefixed = module.stale_implementation_changes(["app/scripts/marker.py"], "app/")
+    unprefixed = module.stale_implementation_changes(["app/scripts/marker.py"])
+    total += 1
+    prefix_ok = prefixed == ["scripts/marker.py"] and unprefixed == []
+    if prefix_ok:
+        passed += 1
+        print("[PASS] monorepo-prefix: 剥掉项目前缀后命中实现改动，不剥则不命中（防静默漏检）")
+    else:
+        failures.append("monorepo-prefix")
+        print(f"[FAIL] monorepo-prefix: prefixed={prefixed} unprefixed={unprefixed}")
 
     print(f"结果：{passed}/{total} 夹具按预期")
     return 0 if passed == total else 1
