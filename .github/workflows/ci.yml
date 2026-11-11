@@ -61,8 +61,9 @@ jobs:
           text = Path("README.md").read_text(encoding="utf-8")
           start = text.index("### 可选：把完成线装成 pre-push")
           block = text[start:].split("```sh", 1)[1].split("```", 1)[0]
-          expected = """python3 scripts/verity.py gate --root . \
-            --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md \
+          # 双反斜杠保留 shell 续行符；Python 三引号会把单个反斜杠加换行折叠成空格。
+          expected = """python3 scripts/verity.py gate --root . \\
+            --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md \\
             --adapter tests/fixtures/valid-adapter.json --run --team --release"""
           assert expected in block, "README pre-push 命令已漂移"
           print("README pre-push 命令一致")

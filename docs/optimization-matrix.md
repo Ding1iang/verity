@@ -18,15 +18,15 @@
 | 11 | 完成线闸门 | done | `scripts/verity.py`（`cmd_gate`、`gate_selftest`） | `python3 scripts/verity.py gate --selftest` 正负对照 PASS；`python3 scripts/verity.py gate --root . --ledger examples/04-project-v1/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run` 为 5/5；`python3 scripts/verity.py gate --root . --ledger examples/05-release/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run` 为 5/5（清单步骤跳过） |
 | 12 | 防绕过 | done | `scripts/verity.py`（`read_anti_bypass_policy`、`check_anti_bypass`）、`.verity/policy.json` 约定 | `gate --selftest` 的负对照：删断言、加 skip/focus、`--no-verify` 被识别；正对照干净提交不误报 |
 | 13 | 完成审计结构化 | done | `templates/07-acceptance.md`、`scripts/check_evidence.py`（`E_COMPLETION_AUDIT`、`E_COMPLETION_AC`、`E_COMPLETION_EVIDENCE`） | `anti_examples.py` 的 `v2-no-completion-audit` 报 `E_STRUCTURE`；`examples/04`、`05` 每条 AC 有完成审计行 |
-| 14 | 旅程卡强制与负路径 | done | `scripts/check_evidence.py`（`E_JOURNEY_NOT_PASSED`、`E_JOURNEY_STEP`）、`scripts/check_coverage.py`（`E_JOURNEY_CARD_MISSING`）、`scripts/verity.py init` | `anti_examples.py` 的 `v2-no-journey`、`v2-journey-not-passed` 均失败；`check_coverage.py --selftest` 9/9 含 `bad-no-journey` |
+| 14 | 旅程卡强制与负路径 | done | `scripts/check_evidence.py`（`E_JOURNEY_NOT_PASSED`、`E_JOURNEY_STEP`）、`scripts/check_coverage.py`（`E_JOURNEY_CARD_MISSING`）、`scripts/verity.py init` | `anti_examples.py` 的 `v2-no-journey`、`v2-journey-not-passed` 均失败；`check_coverage.py --selftest` 11/11 含 `bad-no-journey` |
 | 15 | 阻塞举证单结构化 | done | `templates/blocking-form.md`、`scripts/check_evidence.py`（`check_blocking_form`、`E_BLOCKING_FORM`） | `anti_examples.py` 的 `v2-empty-blocking-form` 报 `E_BLOCKING_FORM`；`examples/03-blocking/blocking-form.md` 通过 |
 | 16 | 发布风险与 PR 摘要 | done | `templates/07-acceptance.md`（发布风险段）、`scripts/verity.py report --kind pr` | `examples/05-release/07` 的发布风险表；`python3 scripts/verity.py report --ledger examples/05-release/07-验收回归清单.md --kind pr` |
 | 17 | 复盘与 F 类统计 | done | `templates/07-acceptance.md`（复盘表）、`scripts/verity.py metrics` | `examples/05-release/07` 的 F1–F6 表；`python3 scripts/verity.py metrics --dir .` |
-| 18 | 红队夹具 | done | `scripts/anti_examples.py`、`docs/reviews/anti-examples.md` | `python3 scripts/anti_examples.py`：50/50 按预期报错 |
+| 18 | 红队夹具 | done | `scripts/anti_examples.py`、`docs/reviews/anti-examples.md` | `python3 scripts/anti_examples.py`：55/55 按预期报错 |
 | 19 | 技能写作 | done | `SKILL.md`、`README.md`、`references/` | `python3 scripts/package.py --check`；SKILL/README 与模板/示例计数一致 |
 | 20 | 术语表与判级校准 | done | `references/evidence.md`、`scripts/check_evidence.py`（A/B+/B/C） | `examples/04`、`05` 证据等级均为 A；`check_evidence.py` 对非法等级报 `E_EVIDENCE_LEVEL` |
 | 21 | 版本迁移与 schema | done | `scripts/verity.py upgrade`、`VERSION`、`CHANGELOG.md` | `python3 scripts/verity.py upgrade --help`；八列账本被明确拒绝，schema_version 不是 2 时报 `E_SCHEMA` |
-| 22 | 适配层预检 | done | `scripts/verity.py doctor`、`references/adapter.md` | `python3 scripts/verity.py doctor --root .`：5/5 通过（适配层缺失按可选） |
+| 22 | 适配层预检 | done | `scripts/verity.py doctor`、`references/adapter.md` | `python3 scripts/verity.py doctor --root .`：6/6 项通过（不带适配层；带适配层 10/10 项通过，适配层缺失按可选） |
 | 23 | 多代理任务图 | done | `templates/07-acceptance.md`（证据归属：task_id / agent_id / claimed_at） | `examples/05` 单代理批次写“本批单代理”；模板字段可被 `check_evidence.py` 解析 |
 | 24 | 度量 | done | `scripts/verity.py metrics` | `python3 scripts/verity.py metrics --dir . --selftest` 输出账本数、行数、A/B+/B/C 比例、F 类、复核发现、返工和周期中位数 |
 | 25 | 安全与脱敏扫描 | done | `scripts/verity.py scan`（默认 warning，`--release` 阻断） | `python3 scripts/verity.py scan --root .`；`--release` 对命中项返回非 0 |

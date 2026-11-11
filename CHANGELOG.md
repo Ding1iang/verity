@@ -15,6 +15,15 @@
 - `scripts/selftest.py`：新增 5 个 v1/v2 自测，原有 5 个 legacy 样本保留，合计 10/10。
 - `references/acceptance.md`：补充上述六个错误码和“通过时欠账/阻塞必须为空”的硬规则。
 
+### 修复
+
+- 统一版本号：`VERSION` 与 `SKILL.md` 同为 1.3.2，`doctor` 不再显示旧号。
+- 同步文档预期读数：`README.md`、`CONTRIBUTING.md`、`docs/optimization-matrix.md` 改为当前实测值（自测 10/10、初始化自测 6/6、覆盖自测 11/11、反例 55/55、doctor 带适配层 10/10、不带 6/6）。
+- `tests/fixtures/valid-adapter.json`：`EV-01` 补 `ac_ids`，让自验收和 v1 示例账本在带适配层的门禁里完成独立复核绑定。
+- `scripts/verity.py doctor`：文档计数断言里的反例数量从写死的 50 改到实际的 55，避免正确的文档被自己判成漂移。
+- `.github/workflows/ci.yml`：修复说明书逐字比对脚本的续行符转义，单反斜杠会被 Python 三引号折叠成空格，导致该断言恒失败。
+- 刷新三份 v1 验收档案：重新取证并绑定最终提交，补齐阻塞单唯一当前状态，修绿初始化自检与整套自动检查。
+
 ### 验证
 
 - `python3 -m py_compile scripts/*.py`：通过。
