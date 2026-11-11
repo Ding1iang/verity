@@ -226,7 +226,9 @@ def v2_case(
     # “证据日期早于 commit 日期”。这里把底样的日期整体平移到今天，
     # 复核执行时间固定为当天 00:10，避免“晚于当前时间”的假红。
     today = date.today().isoformat()
-    text = text.replace("2026-11-08T17:39:36", f"{today}T00:10:00")
+    # 底样的复核时间是取证当时的真实时刻，不能写死某一秒；统一平移到当天 00:10，
+    # 与下面同步改写的执行记录时间保持一致，否则台账刷新后夹具会误报时间不一致。
+    text = re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", f"{today}T00:10:00", text)
     text = text.replace("2026-11-08", today)
     # 复核表的“复跑 HEAD”是短哈希，单独替换，确保夹具绑定自己的提交。
     text = text.replace("| b60b207 |", f"| {commit[:7]} |")
@@ -577,9 +579,11 @@ def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
 
     def fake_review(text: str) -> str:
         # 执行记录是真的，但账本里抄了记录中不存在的输出摘要。
+        # 只依赖表格结构定位“输出摘要”列，不依赖当天的具体读数文本；
+        # 底样的 selftest 读数会随版本变化（5/5 → 10/10），写死会让夹具静默失效。
         return re.sub(
-            r"(\| AC-01 \| supports \| EV-01 \|[^\n]*\| )结果：5/5 通过( \|)",
-            r"\1fabricated output\2",
+            r"(\| AC-01 \| supports \| EV-01 \|[^\n]*?\| 0 \| )([^|\n]+)( \|)",
+            r"\1fabricated output\3",
             text,
             count=1,
         )
