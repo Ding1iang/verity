@@ -1,12 +1,12 @@
 {
   "schema": "verity-manifest/v1",
-  "created_at": "2026-11-08",
-  "workspace_hash": "2e8de23d45b83644a0d0cacfedc94458771da530a2eba7ab1920130f5c3379f1",
+  "created_at": "2026-11-11",
+  "workspace_hash": "f670bbd81c19f9e6d2aa94622b27bb03526fc02774475419f6bbe0a3c6e999a2",
   "files": [
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md",
-      "sha256": "ad220a8512a4f340843589ebdbc24ea8f947658389acfd8f0f5fb6d77ffe4172",
-      "bytes": 6595,
+      "sha256": "e8e487bc520cd5ec89ce8644d920747eeea9439dc903c5f32bbbaa689a1be382",
+      "bytes": 6617,
       "tracked": true,
       "source_command": "python3 scripts/check_evidence.py docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md"
     },
@@ -19,22 +19,22 @@
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/blocking-form.md",
-      "sha256": "919a1c5a105ef1f196e6a814c08cd924c87941faa9c05cd3464b510790625280",
-      "bytes": 869,
+      "sha256": "c5f1be685e0fbf2a770606013c582a4818f641eb3f37ba8f9f74090eaef6b2c1",
+      "bytes": 968,
       "tracked": true,
       "source_command": "批次骨架/记录文件"
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/evidence/04-verification.log",
-      "sha256": "d2c0950dac4f57e7f24e4b480386ccbaed72409cdfb8f0eca86e68ac252ec3fd",
-      "bytes": 5076,
+      "sha256": "cec7416b2c37a82d1722c6436c7d1109463761348514ad540f7271044020697c",
+      "bytes": 2016,
       "tracked": true,
       "source_command": "见 07 账本对应证据行的取证方式"
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/evidence/ev-runs.log",
-      "sha256": "bb9e58194855ada56a1181f375ae9d3b3d3da6dab0e439d6b6beb23bcc806405",
-      "bytes": 437,
+      "sha256": "984a9cd226b918754ee2762445f72bac230f20d4220b93e082272b7eb68fc84b",
+      "bytes": 546,
       "tracked": true,
       "source_command": "见 07 账本对应证据行的取证方式"
     },

@@ -1,118 +1,38 @@
-# verity v1.3.0 自验收验证日志
+# verity v1.3.2 自验收验证日志
 
-- 日期：2026-11-08
-- 代码 HEAD：025ed84436b18bcfff9823217874f083c992f58a（最终实现提交；此后仅允许记录性改动）
-- 路径约定：以下命令均在仓库根执行，输出中的仓库根已用 `<repo>` 表示；不含机器绝对路径。
-- 说明：本日志只记录实际执行过的命令与读数；失败演示单独标注，不混入通过结论。
+- 生成日期：2026-11-11
+- 代码 HEAD：aa1d30aa53ff11a8b61d3f8a6bcee6f4e094c060（最终实现提交；此后仅允许记录性改动）
+- 环境：macOS / Python 3 标准库
+- 执行者：builder
 
-## 1. 八条 verify（全部 exit 0）
+## 1. 语法与单元验证
 
-```text
-$ python3 scripts/selftest.py
-结果：5/5 通过
+| 序号 | 命令 | 实测读数 |
+|---|---|---|
+| 1 | `python3 -m py_compile scripts/*.py` | 退出 0，无输出 |
+| 2 | `python3 scripts/selftest.py` | `结果：10/10 通过` |
+| 3 | `python3 scripts/anti_examples.py` | `结果：55/55 夹具按预期` |
+| 4 | `python3 scripts/check_coverage.py --selftest` | `结果：11/11 通过` |
+| 5 | `bash tests/init-selftest.sh` | `结果：6/6 通过` |
+| 6 | `python3 scripts/package.py --check` | `文件数：60 / 60`；`检查通过（--check 模式，未生成 zip）` |
 
-$ python3 scripts/anti_examples.py
-结果：49/49 夹具按预期
+## 2. 适配层预检
 
-$ python3 scripts/check_coverage.py --selftest
-结果：9/9 通过
+- `python3 scripts/verity.py doctor --root . --adapter tests/fixtures/valid-adapter.json` → `结果：10/10 项通过`
+- `python3 scripts/verity.py doctor --root .` → `结果：6/6 项通过`
 
-$ python3 -m py_compile scripts/*.py
-（无输出，退出码 0）
+## 3. 门禁自检
 
-$ python3 scripts/check_evidence.py examples/04-project-v1/07-验收回归清单.md
-[OK] <repo>/examples/04-project-v1/07-验收回归清单.md：1 行，结论=通过（通过 1）
+`python3 scripts/verity.py gate --selftest` → 范围锁、清单篡改、适配层版本等正负对照全部 `[PASS]`。
 
-$ python3 scripts/check_evidence.py examples/05-release/07-验收回归清单.md
-[OK] <repo>/examples/05-release/07-验收回归清单.md：5 行，结论=通过（通过 5）
+## 4. 证据命令执行记录
 
-$ python3 scripts/package.py --check
-文件数：60 / 60
-总大小：597.8 KB / 10.0 MB
-检查通过（--check 模式，未生成 zip）
+`--run` 在干净工作树执行 EV-01，记录写入 `evidence/ev-runs.log`：
 
-$ git diff --check
-（无输出，退出码 0）
+```json
+{"time": "2026-11-11T16:14:18", "head": "aa1d30aa53ff11a8b61d3f8a6bcee6f4e094c060", "ev": "EV-01", "command": "python3 scripts/selftest.py", "ac_id": "AC-01", "ac_ids": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06"], "hap_sha": "", "exit": 0, "output": "[PASS] bad-v1-old-hap：退出 1，命中 E_ARTIFACT_STALE | [PASS] bad-v1-audit-contradiction：退出 1，命中 E_AUDIT_CONTRADICTION | 结果：10/10 通过", "output_sha256": "3512eba83dce545a0ec724a981fc7f8566b7337cb9372f11486e7762529901bd", "summary": "结果：10/10 通过"}
 ```
 
-## 2. 初始化与适配层
+## 5. 说明
 
-```text
-$ bash tests/init-selftest.sh
-结果：6/6 通过
-
-$ python3 scripts/verity.py doctor --root . --adapter tests/fixtures/valid-adapter.json
-[OK] 证据命令：0 条 commands，1 条 evidence_commands
-[OK] 文档计数：一致
-结果：10/10 项通过
-```
-
-## 3. 完成线 gate
-
-以下三条均为完整命令；examples 两条都带 `--adapter tests/fixtures/valid-adapter.json` 与 `--run`，不是只跑默认门禁。
-
-```text
-$ python3 scripts/verity.py gate --root . --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run --team --release
-[PASS] 证据账本
-[PASS] 覆盖总表：未配置（跳过）
-[PASS] 证据包清单
-[PASS] 范围锁
-[PASS] 防绕过
-[PASS] 安全脱敏
-结果：通过（6/6）
-
-$ python3 scripts/verity.py gate --root . --ledger examples/04-project-v1/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run
-[PASS] 证据账本
-[PASS] 覆盖总表：未配置（跳过）
-[PASS] 证据包清单：6 个文件
-[PASS] 范围锁
-[PASS] 防绕过：未启用（跳过）
-结果：通过（5/5）
-
-$ python3 scripts/verity.py gate --root . --ledger examples/05-release/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run
-[PASS] 证据账本
-[PASS] 覆盖总表：未配置（跳过）
-[PASS] 证据包清单：未配置（跳过）
-[PASS] 范围锁
-[PASS] 防绕过：未启用（跳过）
-结果：通过（5/5）
-```
-
-README 的 pre-push 示例逐字使用上面第一条命令；CI 也执行同一组命令，防止文档口径漂移。
-
-## 4. EV 执行记录与复核绑定
-
-```text
-$ python3 scripts/check_evidence.py --adapter tests/fixtures/valid-adapter.json --run docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md
-[OK] EV-01 退出码 0：python3 scripts/selftest.py；输出：... | 结果：5/5 通过
-[OK] <repo>/docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md：6 行，结论=通过（通过 6）
-
-$ cat docs/reviews/2026-11-08-self-acceptance/evidence/ev-runs.log
-{"time":"2026-11-08T17:39:39","head":"025ed84436b18bcfff9823217874f083c992f58a","ev":"EV-01","command":"python3 scripts/selftest.py","exit":0,"output":"... | 结果：5/5 通过","output_sha256":"100615a80a05ac9376824961d017895088176117da95616b2ed99b1f18419cf1","summary":"结果：5/5 通过"}
-```
-
-复核行只填 `EV-01`。检查器从证据行对应的 `evidence/ev-runs.log` 读取记录，重算输出 SHA-256，并核对 exit=0、记录 HEAD 等于批次被测 commit、执行时间不早于批次生成日期、账本输出摘要等于记录摘要。
-
-## 5. 负向夹具（节选）
-
-```text
-$ python3 scripts/anti_examples.py
-[PASS] v2-ascii-image: E_SCREENSHOT
-[PASS] v2-workspace-forged: E_WORKSPACE_CHANGED
-[PASS] v2-stale-evidence-scripts: E_STALE_EVIDENCE
-[PASS] v2-docs-only-after-evidence: 通过（正向对照）
-[PASS] v2-review-sh-c: E_REVIEW_COMMAND
-[PASS] v2-review-bash-c: E_REVIEW_COMMAND
-[PASS] v2-review-echo: E_REVIEW_COMMAND
-[PASS] v2-review-python-c: E_REVIEW_COMMAND
-[PASS] v2-review-forged-hash: E_REVIEW_COMMAND
-[PASS] v2-review-old-head: E_REVIEW_COMMAND
-[PASS] v2-review-early-time: E_REVIEW_COMMAND
-结果：49/49 夹具按预期
-```
-
-R4-01 复现：把自验收 07 的复核命令改成 `sh -c 'echo "结果：5/5 通过"'`，`check_evidence.py` 报 `E_REVIEW_COMMAND`；把命令改回 `EV-01` 后恢复通过。R5-01 复现：证据提交后追加 `scripts/marker.py` 再运行检查，报 `E_STALE_EVIDENCE`；只追加 `docs/reviews/note.md` 时仍通过。
-
-## 6. 干净克隆复验
-
-在最终提交的干净检出（`git status` 无改动）中复跑第 1～3 节同一组命令；结果以交付回复中的干净克隆读数为准，日志不记录机器绝对路径。
+本日志记录 verity 自身的验证读数，不含示例项目数据。示例账本 `examples/04-project-v1` 与 `examples/05-release` 的证据文件各自独立。
