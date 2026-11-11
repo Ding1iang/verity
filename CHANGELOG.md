@@ -2,6 +2,26 @@
 
 本文件记录 verity 的对外变更。版本号遵循语义化版本（`MAJOR.MINOR.PATCH`），格式参考 Keep a Changelog。
 
+## [v1.3.2] - 2026-11-11
+
+新增“账本内部矛盾”校验：包结论写通过时，欠账、阻塞、复核、旧产物和完成审计必须彼此一致，不能再靠逐行状态相加得出假通过。
+
+### 新增
+
+- `scripts/check_evidence.py`：新增 `E_DEBT_IN_PASS`（通过 + 欠账非空）、`E_BLOCKING_IN_PASS`（通过 + 阻塞单仍 open 或状态不唯一）、`E_REVIEW_MISMATCH`（重复 AC、复核人等于产出者、EV 与 AC 不对应）、`E_ARTIFACT_STALE`（证据 HAP/commit 不是最终值）、`E_AUDIT_CONTRADICTION`（完成审计写通过却带失败描述）、`E_COMPLETION_MISSING`（任务卡 AC 未同时出现在验收行和完成审计）。
+- `blocking-form.md` 现在有唯一当前状态 `open` / `closed`；历史结论只能放在“历史记录”小节，当前状态与历史混写会被判红。
+- 适配层 `evidence_commands` 支持 `ac_ids`；`--run` 写入的 `ev-runs.log` 记录新增 `ac_id`、`ac_ids`、`hap_sha`，复核检查按 AC 和最终 HAP 绑定，防止拿 EV-03 搜索证据给 Ctrl+F 签字。
+- `scripts/anti_examples.py`：新增 5 个反例（通过+欠账、通过+阻塞 open、重复 AC 复核、通过+旧 HAP、通过+完成审计矛盾），夹具总数 55。
+- `scripts/selftest.py`：新增 5 个 v1/v2 自测，原有 5 个 legacy 样本保留，合计 10/10。
+- `references/acceptance.md`：补充上述六个错误码和“通过时欠账/阻塞必须为空”的硬规则。
+
+### 验证
+
+- `python3 -m py_compile scripts/*.py`：通过。
+- `python3 scripts/selftest.py`：10/10 通过。
+- `python3 scripts/anti_examples.py`：55/55 夹具按预期。
+- `python3 scripts/package.py --check`：60/60 文件，未放宽上限。
+
 ## [v1.3.1] - 2026-11-10
 
 修正两处会让“证据自己作废自己”的规则缺陷：跨模块批次被拆成多本 07，以及工作区指纹把文档和账本也算进受控范围。

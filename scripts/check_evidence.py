@@ -67,6 +67,16 @@ V1_PLACEHOLDER_CONCLUSIONS = {
     "通过 / 带欠账交付 / 未交付",
     "通过/带欠账交付/未交付",
 }
+# 包结论为“通过”时，欠账段只允许这些“空”写法；其余任何文字都视为
+# 未闭合欠账。这里不做词频猜测，避免“无欠账表；唯一未闭合项……”这类
+# 夹带式欠账被漏掉。
+V1_EMPTY_DEBT_VALUES = {"无", "无欠账", "没有欠账", "无未闭合欠账", "不适用", "—", "-", "/"}
+# blocking-form 的当前状态只允许 open / closed 两种语义；历史结论必须
+# 放在“历史”小节，不能和当前状态混在一段里。
+V1_BLOCKING_OPEN_VALUES = {"open", "未关闭", "成立", "阻塞成立", "未解除", "仍阻塞"}
+V1_BLOCKING_CLOSED_VALUES = {"closed", "已关闭", "关闭", "解除", "已解除"}
+# 完成审计里出现这些描述，说明该 AC 实际没有被验证为通过。
+V1_AUDIT_CONTRADICTION_WORDS = ("失败", "未进入", "未验证", "未通过", "阻塞", "不成立", "四路注入均未进入")
 
 
 @dataclass(frozen=True)
@@ -1476,8 +1486,14 @@ def check_completion_audit(
     root: Path,
     ledger_dir: Path,
     issues: list[Issue],
+    ledger_rows: Optional[list[dict]] = None,
+    batch_hap: str = "",
 ) -> None:
-    """检查完成审计表：每条 AC 都要有场景、构建、读数和证据。"""
+    """检查完成审计表：每条 AC 都要有场景、构建、读数和证据。
+
+    包结论为“通过”时，完成审计的读数不能同时出现“失败/未进入/未验证”
+    等相反描述；这些词说明该 AC 实际没有通过，必须改判状态或补最终证据。
+    """
     section = find_section(sections, "完成审计")
     if section is None:
         return
@@ -1503,6 +1519,12 @@ def check_completion_audit(
             Issue("E_COMPLETION_AUDIT", "完成审计表头缺列：" + "、".join(missing), section[1])
         )
         return
+    passing_acs = {
+        ac_id
+        for row in (ledger_rows or [])
+        if row.get("status") == "通过"
+        for ac_id in row.get("covers", [])
+    }
     covered: set[str] = set()
     for number, row in rows:
         values = {key: cell(row, index).strip() for key, index in indexes.items()}
@@ -1525,6 +1547,39 @@ def check_completion_audit(
                     number,
                 )
             )
+        if set(ids) & passing_acs:
+            contradiction = next(
+                (word for word in V1_AUDIT_CONTRADICTION_WORDS if word in values["reading"]),
+                "",
+            )
+            if contradiction:
+                issues.append(
+                    Issue(
+                        "E_AUDIT_CONTRADICTION",
+                        f"完成审计写“通过”，但读数含相反描述“{contradiction}”：{values['reading']}",
+                        number,
+                    )
+                )
+        # 通过行的证据若明确记录了另一个 HAP 哈希，说明拿旧构建读数冒充最终证据。
+        if set(ids) & passing_acs and batch_hap:
+            for candidate in extract_paths(values["evidence"]):
+                resolved = resolve_existing_path(candidate, root, ledger_dir)
+                if resolved is None or resolved.suffix.lower() != ".txt":
+                    continue
+                try:
+                    body = resolved.read_text(encoding="utf-8", errors="ignore")
+                except OSError:
+                    continue
+                match = re.search(r"HAP\s+SHA-?256\s*[:：=]\s*([0-9a-fA-F]{64})", body)
+                if match and match.group(1).lower() != batch_hap.lower():
+                    issues.append(
+                        Issue(
+                            "E_ARTIFACT_STALE",
+                            f"完成审计证据 {candidate} 记录的是旧 HAP {match.group(1)[:12]}…，"
+                            f"不是批次最终 HAP {batch_hap[:12]}…",
+                            number,
+                        )
+                    )
         paths = extract_paths(values["evidence"])
         if not paths:
             issues.append(Issue("E_COMPLETION_EVIDENCE", "完成审计行没有真实证据路径", number))
@@ -1590,6 +1645,8 @@ def check_independent_review(
     root: Path,
     ledger_dir: Path,
     issues: list[Issue],
+    evidence_commands: Optional[dict[str, dict]] = None,
+    batch_hap: str = "",
 ) -> None:
     """检查独立复核：逐 AC 表态，复核命令必须绑定 EV 执行记录。
 
@@ -1597,6 +1654,9 @@ def check_independent_review(
     ev-runs.log 读取实际执行记录，重算输出哈希，并核对 exit、HEAD、
     执行时间和输出摘要。任意命令字符串（包括 sh -c、echo、python -c）
     都无法提供匹配记录，因此不会因为“输出看起来对”而通过。
+
+    每个 AC 只能有一行复核记录；同一 EV 只能复核适配层登记给它的 AC，
+    防止用搜索主流程的 EV-03 给 Ctrl+F 等其他 AC 签字。
     """
     section = find_section(sections, "独立复核")
     if section is None:
@@ -1625,6 +1685,12 @@ def check_independent_review(
     if missing:
         issues.append(Issue("E_REVIEW", "独立复核表头缺列：" + "、".join(missing), section[1]))
         return
+    commands_by_ev = evidence_commands or {}
+    producers_by_ac: dict[str, set[str]] = {}
+    for row in rows:
+        if row.get("producer"):
+            for ac_id in row.get("covers", []):
+                producers_by_ac.setdefault(ac_id, set()).add(str(row["producer"]))
 
     batch_producer = batch_values.get("执行者", "").strip()
     batch_reviewer = batch_values.get("复核者", "").strip()
@@ -1645,6 +1711,7 @@ def check_independent_review(
     now = datetime.now()
     log_cache: dict[Path, tuple[list[dict], list[str]]] = {}
     covered: dict[str, list[dict]] = {}
+    seen_review_acs: dict[str, int] = {}
     for number, row in review_rows:
         values = {key: cell(row, index).strip() for key, index in indexes.items()}
         if all(not value for value in values.values()):
@@ -1652,6 +1719,25 @@ def check_independent_review(
         ids = parse_ac_ids(values["ac"])
         if not ids:
             issues.append(Issue("E_REVIEW_AC", "复核行没有 AC ID", number))
+        for ac_id in ids:
+            if ac_id in seen_review_acs:
+                issues.append(
+                    Issue(
+                        "E_REVIEW_MISMATCH",
+                        f"{ac_id} 有重复的独立复核行（第 {seen_review_acs[ac_id]} 行和本行）；每个 AC 只能有一行",
+                        number,
+                    )
+                )
+            else:
+                seen_review_acs[ac_id] = number
+            if values["reviewer"] and values["reviewer"] in producers_by_ac.get(ac_id, set()):
+                issues.append(
+                    Issue(
+                        "E_REVIEW_MISMATCH",
+                        f"{ac_id} 的复核人“{values['reviewer']}”同时是该 AC 的产出者，不能自己复核自己",
+                        number,
+                    )
+                )
         if values["verdict"] not in V1_REVIEW_VERDICTS:
             issues.append(
                 Issue(
@@ -1692,6 +1778,35 @@ def check_independent_review(
                 )
             )
             continue
+        spec = commands_by_ev.get(command)
+        registered_acs: set[str] = set()
+        if spec is not None:
+            raw_registered = spec.get("ac_ids")
+            if isinstance(raw_registered, str):
+                registered_acs = set(parse_ac_ids(raw_registered))
+            elif isinstance(raw_registered, list):
+                registered_acs = {
+                    ac_id for item in raw_registered for ac_id in parse_ac_ids(str(item))
+                }
+            if not registered_acs:
+                issues.append(
+                    Issue(
+                        "E_REVIEW_MISMATCH",
+                        f"{command} 没有在适配层登记可复核的 AC；不能拿它给任何 AC 签字",
+                        number,
+                    )
+                )
+            else:
+                unregistered = sorted(set(ids) - registered_acs)
+                if unregistered:
+                    issues.append(
+                        Issue(
+                            "E_REVIEW_MISMATCH",
+                            f"{command} 只登记给 {'、'.join(sorted(registered_acs))}，"
+                            f"不能用于 {'、'.join(unregistered)}",
+                            number,
+                        )
+                    )
         log_path = _review_log_path(values, root, ledger_dir)
         if log_path not in log_cache:
             log_cache[log_path] = _load_ev_records(log_path)
@@ -1722,6 +1837,51 @@ def check_independent_review(
                 )
             )
             continue
+        record_ac_ids = set(parse_ac_ids(str(record.get("ac_ids", "")))) | set(
+            parse_ac_ids(str(record.get("ac_id", "")))
+        )
+        if spec is not None:
+            if not record_ac_ids:
+                issues.append(
+                    Issue(
+                        "E_REVIEW_COMMAND",
+                        f"{command} 的执行记录没有 ac_id/ac_ids，无法证明它跑的是 {'、'.join(ids)}",
+                        number,
+                    )
+                )
+            elif not (record_ac_ids & set(ids)):
+                issues.append(
+                    Issue(
+                        "E_REVIEW_MISMATCH",
+                        f"{command} 的执行记录登记为 {'、'.join(sorted(record_ac_ids))}，"
+                        f"与复核行 {'、'.join(ids)} 不对应",
+                        number,
+                    )
+                )
+        if batch_hap:
+            record_hap = str(
+                record.get("hap_sha")
+                or record.get("hap_sha256")
+                or record.get("build_sha256")
+                or ""
+            ).strip().lower()
+            if not re.fullmatch(r"[0-9a-f]{64}", record_hap):
+                issues.append(
+                    Issue(
+                        "E_ARTIFACT_STALE",
+                        f"{command} 的执行记录没有最终 HAP 的 SHA-256，不能证明跑在最终构建上",
+                        number,
+                    )
+                )
+            elif record_hap != batch_hap.lower():
+                issues.append(
+                    Issue(
+                        "E_ARTIFACT_STALE",
+                        f"{command} 的执行记录 HAP {record_hap[:12]}… 与批次最终 HAP "
+                        f"{batch_hap[:12]}… 不一致，旧构建证据不能签字",
+                        number,
+                    )
+                )
         record_output = str(record["output"])
         claimed_hash = str(record["output_sha256"]).strip().lower()
         actual_hash = hashlib.sha256(record_output.encode("utf-8")).hexdigest()
@@ -2212,6 +2372,222 @@ def check_blocking_form(
             )
 
 
+def _section_text(section) -> str:
+    """把段落的原始行拼成文本，保留表格里的“无欠账”等占位值。"""
+    return "\n".join(line for _, line in section[2]).strip()
+
+
+def _compact_text(text: str) -> str:
+    """去掉 Markdown 装饰和空白，便于把“| 无欠账 |”识别成“无欠账”。"""
+    compact = re.sub(r"[|*`>#\s]", "", text)
+    return compact.strip("—-/。；;，,、")
+
+
+def _current_blocking_status(text: str) -> tuple[str, bool]:
+    """读取阻塞单当前状态。
+
+    返回 (状态, 是否唯一)。历史记录小节里的旧结论不参与当前状态判断；
+    当前部分同时出现“阻塞成立”和“已关闭”时视为状态不唯一。状态只认
+    open / closed 两个值，避免同一份文件里出现第三套结论。
+    """
+    history = re.search(r"(?m)^#{1,6}\s*.*历史", text)
+    current = text[: history.start()] if history else text
+    statuses: list[str] = []
+    explicit = re.findall(
+        r"(?:当前状态|阻塞状态|状态)\s*[:：]\s*([^\n|]+)", current, flags=re.IGNORECASE
+    )
+    for raw in explicit:
+        value = raw.strip().strip("*` ")
+        lowered = value.lower()
+        if lowered in V1_BLOCKING_OPEN_VALUES or value in V1_BLOCKING_OPEN_VALUES:
+            statuses.append("open")
+        elif lowered in V1_BLOCKING_CLOSED_VALUES or value in V1_BLOCKING_CLOSED_VALUES:
+            statuses.append("closed")
+    # 没有显式状态字段时，退回到正文里的结论词；这类文件本身就是旧格式。
+    if not statuses:
+        if "阻塞成立" in current or "仍阻塞" in current:
+            statuses.append("open")
+        if "阻塞解除" in current or "已关闭" in current:
+            statuses.append("closed")
+    unique = sorted(set(statuses))
+    if len(unique) != 1:
+        return ("", False)
+    return (unique[0], True)
+
+
+def check_pass_debt(sections, conclusion: str, issues: list[Issue]) -> None:
+    """E_DEBT_IN_PASS：包结论为通过时，欠账段必须为空或只写“无欠账”。"""
+    if conclusion != "通过":
+        return
+    section = find_section(sections, "欠账")
+    if section is None:
+        return
+    compact = _compact_text(_section_text(section))
+    if compact and compact not in V1_EMPTY_DEBT_VALUES:
+        issues.append(
+            Issue(
+                "E_DEBT_IN_PASS",
+                f"包结论是通过，但欠账段仍有未闭合内容：{_section_text(section)[:120]}",
+                section[1],
+            )
+        )
+
+
+def check_blocking_in_pass(
+    sections,
+    conclusion: str,
+    ledger_dir: Path,
+    issues: list[Issue],
+) -> None:
+    """E_BLOCKING_IN_PASS：通过账本不能同时保留未关闭的阻塞结论。
+
+    只要 blocking-form.md 存在就解析当前状态，不再依赖是否存在
+    “未交付-阻塞”行；历史结论必须收进“历史记录”小节，不能与当前状态混写。
+    """
+    form = ledger_dir / "blocking-form.md"
+    status = ""
+    unique = True
+    if form.exists():
+        status, unique = _current_blocking_status(form.read_text(encoding="utf-8"))
+        if not unique:
+            issues.append(
+                Issue(
+                    "E_BLOCKING_IN_PASS",
+                    "blocking-form.md 没有唯一当前状态（open / closed），历史结论不能与当前结论混写",
+                    None,
+                )
+            )
+        elif not status:
+            issues.append(
+                Issue(
+                    "E_BLOCKING_IN_PASS",
+                    "blocking-form.md 缺少明确的“当前状态：open / closed”",
+                    None,
+                )
+            )
+    if conclusion != "通过":
+        return
+    section = find_section(sections, "阻塞举证")
+    if section is not None:
+        compact = _compact_text(_section_text(section))
+        allowed = not compact or compact in V1_EMPTY_DEBT_VALUES
+        if not allowed and not compact.startswith("已关闭"):
+            issues.append(
+                Issue(
+                    "E_BLOCKING_IN_PASS",
+                    f"包结论是通过，但阻塞举证段仍有当前阻塞描述：{_section_text(section)[:120]}",
+                    section[1],
+                )
+            )
+    if form.exists() and status == "open":
+        issues.append(
+            Issue(
+                "E_BLOCKING_IN_PASS",
+                "包结论是通过，但 blocking-form.md 当前状态仍是 open",
+                None,
+            )
+        )
+
+
+def check_artifact_stale(
+    rows: list[dict],
+    batch_values: dict[str, str],
+    batch_hap: str,
+    root: Path,
+    ledger_dir: Path,
+    issues: list[Issue],
+) -> None:
+    """E_ARTIFACT_STALE：通过行的证据必须指向最终 HAP 和最终提交。"""
+    version = batch_values.get("被测版本", "")
+    match = re.search(r"commit[:：]\s*([0-9a-fA-F]{7,40})", version)
+    batch_commit = match.group(1).lower() if match else ""
+    for row in rows:
+        if row.get("status") != "通过":
+            continue
+        for candidate in row.get("paths", []):
+            resolved = resolve_existing_path(candidate, root, ledger_dir)
+            if resolved is None or resolved.suffix.lower() not in {".txt", ".json", ".md", ".log"}:
+                continue
+            try:
+                body = resolved.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            hap_match = re.search(
+                r"(?:HAP\s+SHA-?256|hap_sha(?:256)?|build_sha256)[\"']?\s*[:：=]\s*[\"']?([0-9a-fA-F]{64})",
+                body,
+            )
+            if hap_match and batch_hap and hap_match.group(1).lower() != batch_hap.lower():
+                issues.append(
+                    Issue(
+                        "E_ARTIFACT_STALE",
+                        f"{candidate} 记录的是旧 HAP {hap_match.group(1)[:12]}…，"
+                        f"不是批次最终 HAP {batch_hap[:12]}…",
+                        row.get("line"),
+                    )
+                )
+            head_match = re.search(
+                r"(?:^|[\s,{])[\"']?(?:HEAD|head|commit|复跑 HEAD)[\"']?\s*[:：=]\s*[\"']?([0-9a-fA-F]{7,40})",
+                body,
+            )
+            if head_match and batch_commit:
+                recorded = head_match.group(1).lower()
+                if not batch_commit.startswith(recorded) and not recorded.startswith(batch_commit):
+                    issues.append(
+                        Issue(
+                            "E_ARTIFACT_STALE",
+                            f"{candidate} 记录的是旧提交 {recorded[:12]}…，"
+                            f"不是批次最终提交 {batch_commit[:12]}…",
+                            row.get("line"),
+                        )
+                    )
+
+
+def check_completion_missing(
+    sections,
+    conclusion: str,
+    acs: list[tuple[str, str, int]],
+    rows: list[dict],
+    issues: list[Issue],
+) -> None:
+    """E_COMPLETION_MISSING：通过账本必须逐 AC 同时出现在验收行和完成审计。"""
+    if conclusion != "通过":
+        return
+    expected = {ac_id for ac_id, _, _ in acs}
+    row_acs = {ac_id for row in rows for ac_id in row.get("covers", [])}
+    audit_acs: set[str] = set()
+    section = find_section(sections, "完成审计")
+    if section is not None:
+        table = parse_first_table(section[2])
+        if table is not None:
+            _, header, audit_rows = table
+            normalized = [normalize_header(item) for item in header]
+            ac_index = next(
+                (i for i, item in enumerate(normalized) if item in {"对应ac", "对应 ac", "ac", "验收项id"}),
+                None,
+            )
+            if ac_index is not None:
+                for _, row in audit_rows:
+                    audit_acs.update(parse_ac_ids(cell(row, ac_index)))
+    missing_rows = sorted(expected - row_acs)
+    missing_audit = sorted(expected - audit_acs)
+    if missing_rows:
+        issues.append(
+            Issue(
+                "E_COMPLETION_MISSING",
+                "任务卡 AC 没有出现在单项验收表：" + "、".join(missing_rows),
+                None,
+            )
+        )
+    if missing_audit:
+        issues.append(
+            Issue(
+                "E_COMPLETION_MISSING",
+                "任务卡 AC 没有出现在完成审计表：" + "、".join(missing_audit),
+                None,
+            )
+        )
+
+
 def check_v1_ledger(
     path: Path,
     root: Path,
@@ -2219,6 +2595,7 @@ def check_v1_ledger(
     sections,
     policy: Optional[LedgerPolicy] = None,
     strict: bool = False,
+    evidence_commands: Optional[dict[str, dict]] = None,
 ) -> tuple[list[Issue], dict[str, int], str]:
     """检查项目 v1/v2 账本。
 
@@ -2270,6 +2647,9 @@ def check_v1_ledger(
     batch_build = build_match.group(1).strip() if build_match else ""
     commit_match = re.search(r"commit[:：]\s*([0-9a-fA-F]{7,40})", build_text)
     batch_commit = commit_match.group(1).lower() if commit_match else ""
+    build_row = batch_values.get("产品构建", "")
+    hap_match = re.search(r"(?:SHA-?256)\s*[:：]?\s*([0-9a-fA-F]{64})", build_row)
+    batch_hap = hap_match.group(1).lower() if hap_match else ""
     if batch_commit:
         changed, changed_error = git_changed_paths(root, batch_commit)
         if changed_error:
@@ -2658,9 +3038,25 @@ def check_v1_ledger(
         journey_passed = journey_ok
 
     check_evidence_identity(sections, row_records, batch_build, root, ledger_dir, issues)
-    check_completion_audit(sections, acs, batch_build, root, ledger_dir, issues)
-    check_independent_review(sections, acs, row_records, batch_values, root, ledger_dir, issues)
+    check_completion_audit(
+        sections, acs, batch_build, root, ledger_dir, issues, row_records, batch_hap
+    )
+    check_independent_review(
+        sections,
+        acs,
+        row_records,
+        batch_values,
+        root,
+        ledger_dir,
+        issues,
+        evidence_commands,
+        batch_hap,
+    )
     check_blocking_form(ledger_dir, row_records, issues)
+    check_pass_debt(sections, conclusion, issues)
+    check_blocking_in_pass(sections, conclusion, ledger_dir, issues)
+    check_artifact_stale(row_records, batch_values, batch_hap, root, ledger_dir, issues)
+    check_completion_missing(sections, conclusion, acs, row_records, issues)
     check_evidence_ownership(sections, batch_values, root, ledger_dir, issues)
 
     # 任务卡在取证之后又被改动，说明判据变了，旧证据随之失效。
@@ -2724,6 +3120,7 @@ def check_ledger(
     forced_format: str = "auto",
     policy: Optional[LedgerPolicy] = None,
     strict: bool = False,
+    evidence_commands: Optional[dict[str, dict]] = None,
 ) -> tuple[list[Issue], dict[str, int], str]:
     """执行全部检查，返回 (问题列表, 状态计数, 收口/包结论)。
 
@@ -2756,7 +3153,7 @@ def check_ledger(
     issues.extend(check_duplicate_sources(path, text, sections, v1=v1))
     if v1:
         v1_issues, v1_counts, v1_conclusion = check_v1_ledger(
-            path, root, text, sections, policy, strict
+            path, root, text, sections, policy, strict, evidence_commands
         )
         return issues + v1_issues, v1_counts, v1_conclusion
 
@@ -3077,11 +3474,13 @@ def render_summary(path: Path, counts: dict[str, int], conclusion: str) -> str:
     return f"[OK] {path}：{sum(counts.values())} 行，结论={conclusion or '未写'}（{detail}）"
 
 
-def read_evidence_commands(adapter_path: Path) -> dict[str, str]:
-    """读取适配层的 evidence_commands 白名单。
+def read_evidence_commands(adapter_path: Path) -> dict[str, dict]:
+    """读取适配层的 evidence_commands 白名单与 AC 绑定。
 
-    支持对象形式 {"EV-01": {"command": "..."}} 和数组形式
-    [{"id": "EV-01", "command": "..."}]；只允许 EV-数字 ID。
+    支持对象形式 {"EV-01": {"command": "...", "ac_ids": ["AC-01"]}} 和数组
+    形式 [{"id": "EV-01", "command": "...", "ac_ids": ["AC-01"]}]；只允许
+    EV-数字 ID。ac_ids 用于把每条证据命令登记到它真正覆盖的 AC，防止拿
+    搜索主流程的 EV-03 给 Ctrl+F 等其他 AC 签字。
     """
     try:
         data = json.loads(adapter_path.read_text(encoding="utf-8"))
@@ -3090,14 +3489,21 @@ def read_evidence_commands(adapter_path: Path) -> dict[str, str]:
     raw = data.get("evidence_commands") if isinstance(data, dict) else None
     if raw is None:
         return {}
-    commands: dict[str, str] = {}
+    commands: dict[str, dict] = {}
     if isinstance(raw, dict):
         items = raw.items()
         for key, value in items:
-            command = value.get("command") if isinstance(value, dict) else value
+            if not isinstance(value, dict):
+                raise ValueError(f"evidence_commands.{key} 必须是对象")
+            command = value.get("command")
             if not isinstance(command, str) or not command.strip():
                 raise ValueError(f"evidence_commands.{key} 缺少 command")
-            commands[str(key)] = command.strip()
+            ac_ids = value.get("ac_ids", [])
+            if isinstance(ac_ids, str):
+                ac_ids = [ac_ids]
+            if not isinstance(ac_ids, list):
+                raise ValueError(f"evidence_commands.{key}.ac_ids 必须是数组")
+            commands[str(key)] = {"command": command.strip(), "ac_ids": [str(item).strip() for item in ac_ids if str(item).strip()]}
     elif isinstance(raw, list):
         for item in raw:
             if not isinstance(item, dict):
@@ -3106,7 +3512,12 @@ def read_evidence_commands(adapter_path: Path) -> dict[str, str]:
             command = item.get("command")
             if not key or not isinstance(command, str) or not command.strip():
                 raise ValueError("evidence_commands 数组项必须有 id 和 command")
-            commands[key] = command.strip()
+            ac_ids = item.get("ac_ids", [])
+            if isinstance(ac_ids, str):
+                ac_ids = [ac_ids]
+            if not isinstance(ac_ids, list):
+                raise ValueError("evidence_commands 数组项的 ac_ids 必须是数组")
+            commands[key] = {"command": command.strip(), "ac_ids": [str(value).strip() for value in ac_ids if str(value).strip()]}
     else:
         raise ValueError("evidence_commands 必须是对象或数组")
     invalid = [key for key in commands if not re.fullmatch(r"EV-\d{2,3}", key)]
@@ -3192,6 +3603,12 @@ def run_evidence_commands(
     if not referenced:
         issues.append(Issue("E_EVIDENCE_COMMAND", "账本没有引用任何 EV ID"))
         return
+    # 批次最终 HAP：执行记录必须带上它，复核时才不会把旧构建的读数当成最终证据。
+    batch_values, _, _ = parse_batch_values(sections)
+    hap_match = re.search(
+        r"(?:SHA-?256)\s*[:：]?\s*([0-9a-fA-F]{64})", batch_values.get("产品构建", "")
+    )
+    batch_hap = hap_match.group(1).lower() if hap_match else ""
     evidence_dir = path.parent / "evidence"
     log_path = evidence_dir / "ev-runs.log"
     existing_records, log_errors = _load_ev_records(log_path)
@@ -3203,7 +3620,9 @@ def run_evidence_commands(
     new_records: list[dict] = []
     try:
         for evidence_id in sorted(set(referenced)):
-            command = commands[evidence_id]
+            spec = commands[evidence_id]
+            command = str(spec.get("command", "")).strip()
+            ac_ids = [str(item) for item in spec.get("ac_ids", []) if str(item).strip()]
             reusable = next(
                 (
                     item
@@ -3212,6 +3631,8 @@ def run_evidence_commands(
                     and str(item.get("command", "")) == command
                     and str(item.get("exit", "")) == "0"
                     and str(item.get("output_sha256", ""))
+                    and str(item.get("hap_sha", "")).lower() == batch_hap
+                    and sorted(str(value) for value in item.get("ac_ids", [])) == sorted(ac_ids)
                 ),
                 None,
             )
@@ -3243,6 +3664,9 @@ def run_evidence_commands(
                 "head": head,
                 "ev": evidence_id,
                 "command": command,
+                "ac_id": ac_ids[0] if ac_ids else "",
+                "ac_ids": ac_ids,
+                "hap_sha": batch_hap,
                 "exit": process.returncode,
                 "output": tail,
                 "output_sha256": hashlib.sha256(tail.encode("utf-8")).hexdigest(),
@@ -3386,8 +3810,20 @@ def main(argv: Optional[list[str]] = None) -> int:
             return 2
 
     forced_format = args.format if args.format != "auto" else adapter_format
+    evidence_specs: Optional[dict[str, dict]] = None
+    if adapter_file is not None:
+        try:
+            evidence_specs = read_evidence_commands(adapter_file)
+        except ValueError as error:
+            print(f"用法错误：{error}", file=sys.stderr)
+            return 2
     issues, counts, conclusion = check_ledger(
-        resolved, root, forced_format, policy=policy, strict=args.strict
+        resolved,
+        root,
+        forced_format,
+        policy=policy,
+        strict=args.strict,
+        evidence_commands=evidence_specs,
     )
     if args.run:
         run_evidence_commands(resolved, root, adapter_file, issues, timeout=args.timeout)

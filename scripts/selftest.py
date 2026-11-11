@@ -17,6 +17,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+
+import anti_examples
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -143,6 +145,100 @@ def run_checker(case_dir: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def make_v1_cases(root: Path) -> list[tuple[str, Path, str]]:
+    """用 v2 合规底样造五类“通过但账本自相矛盾”的坏样本。
+
+    这些规则只存在于 v1/v2 账本，legacy 八列自测覆盖不到；直接复用
+    anti_examples.v2_case，避免在自测里再维护一套 v2 夹具生成逻辑。
+    """
+    cases: list[tuple[str, Path, str]] = []
+    cases.append(
+        (
+            "bad-v1-debt-in-pass",
+            anti_examples.v2_case(
+                root,
+                "bad-v1-debt-in-pass",
+                lambda text: text.replace(
+                    "## 欠账\n\n无欠账。",
+                    "## 欠账\n\nF-003 Ctrl+F 真实键盘复测失败，仍未闭合。",
+                    1,
+                ),
+            ),
+            "E_DEBT_IN_PASS",
+        )
+    )
+    cases.append(
+        (
+            "bad-v1-blocking-in-pass",
+            anti_examples.v2_case(
+                root,
+                "bad-v1-blocking-in-pass",
+                extra={
+                    "blocking-form.md": "# 阻塞举证单\n\n当前状态：open\n\n## 历史记录\n\n无。\n"
+                },
+            ),
+            "E_BLOCKING_IN_PASS",
+        )
+    )
+
+    def duplicate_review(text: str) -> str:
+        row = next(
+            line for line in text.splitlines() if line.startswith("| AC-01 | supports |")
+        )
+        return text.replace(row, row + "\n" + row, 1)
+
+    cases.append(
+        (
+            "bad-v1-duplicate-review",
+            anti_examples.v2_case(root, "bad-v1-duplicate-review", duplicate_review),
+            "E_REVIEW_MISMATCH",
+        )
+    )
+
+    stale_text = "HAP SHA-256: " + "a" * 64 + "\nHEAD: " + "1" * 40 + "\n"
+
+    def stale_hap(text: str) -> str:
+        text = text.replace(
+            "| 被测版本 |",
+            "| 产品构建 | entry-default-signed.hap；SHA-256 " + "b" * 64 + "；9,641,508B |\n| 被测版本 |",
+            1,
+        )
+        return text.replace(
+            "| REL-01 | AC-01 | J-01 / 步骤 1 | 07 包结论为通过，且没有未通过或阻塞行 | 日志 | README.md（EV-01） |",
+            "| REL-01 | AC-01 | J-01 / 步骤 1 | 07 包结论为通过，且没有未通过或阻塞行 | 日志 | evidence/old-build.txt（EV-01） |",
+            1,
+        )
+
+    cases.append(
+        (
+            "bad-v1-old-hap",
+            anti_examples.v2_case(
+                root,
+                "bad-v1-old-hap",
+                stale_hap,
+                {"evidence/old-build.txt": stale_text},
+            ),
+            "E_ARTIFACT_STALE",
+        )
+    )
+
+    def audit_contradiction(text: str) -> str:
+        return text.replace(
+            "| 07 包结论为通过，且没有未通过或阻塞行 | AC-01 | `python3 scripts/check_evidence.py examples/05-release/07-验收回归清单.md` | example-05-build | 退出 0；账本行通过 | README.md |",
+            "| 07 包结论为通过，且没有未通过或阻塞行 | AC-01 | `python3 scripts/check_evidence.py examples/05-release/07-验收回归清单.md` | example-05-build | 退出 0；未进入搜索态 | README.md |",
+            1,
+        )
+
+    cases.append(
+        (
+            "bad-v1-audit-contradiction",
+            anti_examples.v2_case(root, "bad-v1-audit-contradiction", audit_contradiction),
+            "E_AUDIT_CONTRADICTION",
+        )
+    )
+    return cases
+
+
 def main() -> int:
     if not CHECKER.is_file():
         print(f"自测失败：找不到检查器 {CHECKER}", file=sys.stderr)
@@ -218,7 +314,22 @@ def main() -> int:
                 for line in output.splitlines():
                     print(f"       {line}")
 
-    print(f"结果：{passed}/{len(cases)} 通过")
+        v1_cases = make_v1_cases(root)
+        for label, ledger, expected in v1_cases:
+            process = run_checker(ledger.parent)
+            output = process.stdout + process.stderr
+            hit = expected in output
+            ok = process.returncode != 0 and hit
+            if ok:
+                passed += 1
+                print(f"[PASS] {label}：退出 {process.returncode}，命中 {expected}")
+            else:
+                print(f"[FAIL] {label}：退出 {process.returncode}，未命中 {expected}")
+                failures.append(label)
+                for line in output.splitlines():
+                    print(f"       {line}")
+        total = len(cases) + len(v1_cases)
+        print(f"结果：{passed}/{total} 通过")
     if failures:
         print("未通过的样本：" + "、".join(failures), file=sys.stderr)
         return 1

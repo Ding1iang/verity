@@ -695,6 +695,99 @@ def run_v2_cases(root: Path) -> list[tuple[str, Path, str]]:
     subprocess.run(["git", "commit", "-qm", "fixture: implementation after evidence"], cwd=stale_case, check=False)
     cases.append(("v2-stale-evidence-scripts", stale_ledger, "E_STALE_EVIDENCE"))
 
+    # 以下五类验证“包结论通过时账本内部不能自相矛盾”。每条只改一处，
+    # 失败原因必须是对应错误码，不能被缺段或缺证据掩盖。
+    cases.append(
+        (
+            "v2-pass-with-debt",
+            v2_case(
+                root,
+                "v2-pass-with-debt",
+                lambda text: text.replace(
+                    "## 欠账\n\n无欠账。",
+                    "## 欠账\n\nF-003 Ctrl+F 真实键盘复测失败，仍未闭合。",
+                    1,
+                ),
+            ),
+            "E_DEBT_IN_PASS",
+        )
+    )
+
+    cases.append(
+        (
+            "v2-pass-with-open-blocking",
+            v2_case(
+                root,
+                "v2-pass-with-open-blocking",
+                extra={
+                    "blocking-form.md": "# 阻塞举证单\n\n当前状态：open\n\n## 历史记录\n\n无。\n"
+                },
+            ),
+            "E_BLOCKING_IN_PASS",
+        )
+    )
+
+    def duplicate_review(text: str) -> str:
+        row = next(
+            line
+            for line in text.splitlines()
+            if line.startswith("| AC-01 | supports |")
+        )
+        return text.replace(row, row + "\n" + row, 1)
+
+    cases.append(
+        (
+            "v2-duplicate-review-ac",
+            v2_case(root, "v2-duplicate-review-ac", duplicate_review),
+            "E_REVIEW_MISMATCH",
+        )
+    )
+
+    old_hap = "a" * 64
+    old_text = f"HAP SHA-256: {old_hap}\nHEAD: 1111111111111111111111111111111111111111\n"
+
+    def stale_hap(text: str) -> str:
+        text = text.replace(
+            "| 被测版本 |",
+            "| 产品构建 | entry-default-signed.hap；SHA-256 "
+            + "b" * 64
+            + "；9,641,508B |\n| 被测版本 |",
+            1,
+        )
+        return text.replace(
+            "| REL-01 | AC-01 | J-01 / 步骤 1 | 07 包结论为通过，且没有未通过或阻塞行 | 日志 | README.md（EV-01） |",
+            "| REL-01 | AC-01 | J-01 / 步骤 1 | 07 包结论为通过，且没有未通过或阻塞行 | 日志 | evidence/old-build.txt（EV-01） |",
+            1,
+        )
+
+    cases.append(
+        (
+            "v2-pass-with-old-hap",
+            v2_case(
+                root,
+                "v2-pass-with-old-hap",
+                stale_hap,
+                {"evidence/old-build.txt": old_text},
+            ),
+            "E_ARTIFACT_STALE",
+        )
+    )
+
+    def audit_contradiction(text: str) -> str:
+        return text.replace(
+            "| 07 包结论为通过，且没有未通过或阻塞行 | AC-01 | `python3 scripts/check_evidence.py examples/05-release/07-验收回归清单.md` | example-05-build | 退出 0；账本行通过 | README.md |",
+            "| 07 包结论为通过，且没有未通过或阻塞行 | AC-01 | `python3 scripts/check_evidence.py examples/05-release/07-验收回归清单.md` | example-05-build | 退出 0；未进入搜索态 | README.md |",
+            1,
+        )
+
+    cases.append(
+        (
+            "v2-pass-with-audit-contradiction",
+            v2_case(root, "v2-pass-with-audit-contradiction", audit_contradiction),
+            "E_AUDIT_CONTRADICTION",
+        )
+    )
+
     return cases
 
 
