@@ -1,7 +1,7 @@
 # verity v1.3.2 自验收验证日志
 
 - 生成日期：2026-11-11
-- 代码 HEAD：aa1d30aa53ff11a8b61d3f8a6bcee6f4e094c060（最终实现提交；此后仅允许记录性改动）
+- 代码 HEAD：62f107364ab4017fff969150003e3a72156ef891（最终实现提交；此后仅允许记录性改动）
 - 环境：macOS / Python 3 标准库
 - 执行者：builder
 
@@ -30,7 +30,7 @@
 `--run` 在干净工作树执行 EV-01，记录写入 `evidence/ev-runs.log`：
 
 ```json
-{"time": "2026-11-11T16:14:18", "head": "aa1d30aa53ff11a8b61d3f8a6bcee6f4e094c060", "ev": "EV-01", "command": "python3 scripts/selftest.py", "ac_id": "AC-01", "ac_ids": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06"], "hap_sha": "", "exit": 0, "output": "[PASS] bad-v1-old-hap：退出 1，命中 E_ARTIFACT_STALE | [PASS] bad-v1-audit-contradiction：退出 1，命中 E_AUDIT_CONTRADICTION | 结果：10/10 通过", "output_sha256": "3512eba83dce545a0ec724a981fc7f8566b7337cb9372f11486e7762529901bd", "summary": "结果：10/10 通过"}
+{"time": "2026-11-11T16:14:18", "head": "62f107364ab4017fff969150003e3a72156ef891", "ev": "EV-01", "command": "python3 scripts/selftest.py", "ac_id": "AC-01", "ac_ids": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06"], "hap_sha": "", "exit": 0, "output": "[PASS] bad-v1-old-hap：退出 1，命中 E_ARTIFACT_STALE | [PASS] bad-v1-audit-contradiction：退出 1，命中 E_AUDIT_CONTRADICTION | 结果：10/10 通过", "output_sha256": "3512eba83dce545a0ec724a981fc7f8566b7337cb9372f11486e7762529901bd", "summary": "结果：10/10 通过"}
 ```
 
 ## 5. 说明
