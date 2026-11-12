@@ -1938,7 +1938,9 @@ def check_independent_review(
                             number,
                         )
                     )
-            if record_time > now.replace(microsecond=0) + timedelta(minutes=5):
+            # 记录里的时间是不带时区的本地时间，而检查可能在另一个时区跑（CI 用 UTC）。
+            # 留一天余量，既挡住真正“未来时间”的造假，又不误伤跨时区的正常记录。
+            if record_time > now.replace(microsecond=0) + timedelta(hours=24):
                 issues.append(Issue("E_REVIEW_COMMAND", f"{command} 的执行记录时间晚于当前时间", number))
             if values["runtime"] and str(record["time"]).strip() != values["runtime"].strip():
                 issues.append(

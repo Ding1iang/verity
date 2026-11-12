@@ -26,6 +26,9 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+        with:
+          # 账本要校验证据提交是否为 HEAD 的祖先，浅克隆会让这类检查全部失败。
+          fetch-depth: 0
 
       - name: 安装 Python
         uses: actions/setup-python@v5
