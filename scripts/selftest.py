@@ -19,11 +19,13 @@ import sys
 import tempfile
 
 import anti_examples
+import check_reviewer
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 CHECKER = Path(__file__).resolve().parent / "check_evidence.py"
+REVIEWER = Path(__file__).resolve().parent / "check_reviewer.py"
 
 BATCH_INFO = """## 批次信息
 
@@ -328,7 +330,57 @@ def main() -> int:
                 failures.append(label)
                 for line in output.splitlines():
                     print(f"       {line}")
-        total = len(cases) + len(v1_cases)
+        # 复核会话核验：临时目录造两个会话，真 id 通过、伪造 id 失败。
+        reviewer_sessions = root / "reviewer-sessions"
+        reviewer_real = check_reviewer.build_selftest_case(
+            root,
+            "reviewer-real",
+            "verifier-selftest-real",
+            sessions_root=reviewer_sessions,
+        )
+        reviewer_forged = check_reviewer.build_selftest_case(
+            root,
+            "reviewer-forged",
+            "verifier-selftest-forged",
+            create_session=False,
+            sessions_root=reviewer_sessions,
+        )
+        reviewer_cases = [
+            ("reviewer-real", reviewer_real, 0, ""),
+            ("reviewer-forged", reviewer_forged, 1, "没有同名会话目录"),
+        ]
+        for label, ledger_path, expected_code, expected_text in reviewer_cases:
+            process = subprocess.run(
+                [
+                    sys.executable,
+                    str(REVIEWER),
+                    "--ledger",
+                    str(ledger_path),
+                    "--sessions-root",
+                    str(reviewer_sessions),
+                    "--project-key",
+                    "verity",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            output = process.stdout + process.stderr
+            hit = expected_text in output if expected_text else True
+            ok = process.returncode == expected_code and hit
+            if ok:
+                passed += 1
+                print(
+                    f"[PASS] {label}：退出 {process.returncode}，"
+                    + ("四项核验通过" if expected_code == 0 else "命中伪造会话")
+                )
+            else:
+                print(f"[FAIL] {label}：期望退出 {expected_code}，实际 {process.returncode}")
+                failures.append(label)
+                for line in output.splitlines():
+                    print(f"       {line}")
+
+        total = len(cases) + len(v1_cases) + len(reviewer_cases)
         print(f"结果：{passed}/{total} 通过")
     if failures:
         print("未通过的样本：" + "、".join(failures), file=sys.stderr)

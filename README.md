@@ -4,7 +4,7 @@
 
 verity 用任务卡先定靶，用证据分级判断结论能不能成立。v1 默认模板（schema 2）用十三列账本和三种包结论：通过、未交付（失败）、未交付（阻塞）；检查器默认拒绝“带欠账/带欠账交付”，读取历史账本时用 `--compat-debt` 显式放行；`--strict` 仍可叠加卡口。旧八列账本保留通过、未通过、阻塞三态。核心只有一句：**结论只能比证据小。**
 
-从 1.3.0 起，32 项工作流优化全部落到规则、模板、检查器和门禁：任务卡先判快慢车道并锁范围，账本强制旅程、完成审计和独立复核，证据绑定产物身份与 SHA-256，`verity.py gate` 成为本地完成线，`anti_examples.py` 用 57 个反例证明门禁会报红。
+从 1.3.0 起，32 项工作流优化全部落到规则、模板、检查器和门禁：任务卡先判快慢车道并锁范围，账本强制旅程、完成审计和独立复核，证据绑定产物身份与 SHA-256，`verity.py gate` 成为本地完成线，`anti_examples.py` 用 58 个反例证明门禁会报红。
 
 从 1.2.0 起，修缺陷不再以“最小修复”为目标，而是按根因做完整修复并过完成门禁：最终构建跑完整矩阵、交付物自包含、可补项不能留成欠账。
 
@@ -40,7 +40,7 @@ python3 scripts/selftest.py
 预期最后一行：
 
 ```text
-结果：10/10 通过
+结果：12/12 通过
 ```
 
 这一步会用十例样本验证检查器：一个好样本、九个坏样本，覆盖缺证据、假路径、旧结论词、重复状态源，以及账本内部矛盾（欠账、阻塞、复核、旧产物、完成审计不一致）都必须被拦住。
@@ -101,7 +101,7 @@ python3 scripts/package.py --check
 检查通过（--check 模式，未生成 zip）
 ```
 
-当前仓库实测：产品 24 / 30 个文件，资料 36 / 45 个文件，合计 60 / 80；产品硬上限 2 MB，资料软上限 8 MB，总体积上限 10 MB。
+当前仓库实测：产品 25 / 30 个文件，资料 37 / 45 个文件，合计 62 / 80；产品硬上限 2 MB，资料软上限 8 MB，总体积上限 10 MB。
 
 `--check` 只统计和校验，不生成压缩包。产品超限或总数/总体积超限时直接失败，不生成 zip；资料超过软上限只提醒，不阻断。
 
@@ -169,7 +169,7 @@ verity/
 ├── references/              # 规则正文：证据、验收、验收执行、四种模式、视觉、视觉优化、行为性能、项目适配层
 ├── templates/               # 六份可复制模板：任务卡、07 账本、阻塞举证单、适配层、覆盖总表、用户旅程卡
 ├── examples/                # 五个端到端示例
-├── scripts/                 # init、doctor、gate、manifest、report、metrics、upgrade、scan、自测、账本/覆盖检查、反例、打包（纯标准库）
+├── scripts/                 # init、doctor、gate、manifest、report、metrics、upgrade、scan、自测、账本/覆盖检查、复核会话核验、反例、打包（纯标准库）
 ├── tests/                   # init 命令自测（bash）
 ├── docs/                    # 设计说明、外部来源与复核记录
 └── README.md
@@ -196,7 +196,7 @@ verity/
 - 视觉验收：`references/visual.md`
 - 纯视觉优化：`references/ui-improvement.md`
 - 行为与性能：`references/behavior-perf.md`
-- 57 类反例与红队夹具：`docs/reviews/anti-examples.md`
+- 58 类反例与红队夹具：`docs/reviews/anti-examples.md`
 - 本机空目录复跑记录：`docs/reviews/clean-clone.md`
 - 新功能模式：`references/new-feature.md`
 - 修缺陷模式：`references/bug-fix.md`

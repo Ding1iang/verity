@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""生成并运行 57 类反例，逐条断言检查器报出指定错误码。
+"""生成并运行 58 类反例，逐条断言检查器报出指定错误码。
 
 这个脚本是给 verifier 用的“反例预备清单”执行器：所有样本在临时目录里
 即时生成，不依赖仓库里的示例文件，也不写入用户数据。每个样本都故意只
@@ -848,6 +848,15 @@ def main() -> int:
 
         # 11. 新账本默认禁止带欠账：没有 --compat-debt 时，带欠账必须报错。
         cases.append(("debt-not-allowed", write_case(root, "debt-not-allowed", [row("CASE-11", status="带欠账")], conclusion="带欠账交付"), "E_STATUS"))
+
+        # 12. 读数只写“正常”：通过行的读数没有数字/像素/DB 字段，判红。
+        cases.append(
+            (
+                "reading-only-normal",
+                REPO_ROOT / "tests" / "fixtures" / "bad-reading-only-normal" / "07-验收回归清单.md",
+                "E_READING_MISSING",
+            )
+        )
 
         all_cases = cases + run_v2_cases(root)
         module = check_evidence_module()

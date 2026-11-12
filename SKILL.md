@@ -1,6 +1,6 @@
 ---
 name: verity
-version: 1.3.3
+version: 1.3.4
 description: 交付验收与多批次编排。当 AI 准备说完成时，用任务卡、证据分级、用户旅程、v1 schema 2 十三列与三包结论验证，不能证明就标未交付或阻塞；多批次工程按准备批 / 修复批 / 回归批串行编排（按批次跑、自动派下一批、监控批次）。
 ---
 
@@ -47,7 +47,7 @@ description: 交付验收与多批次编排。当 AI 准备说完成时，用任
 
 放行五条：批次标签解引用后等于最终提交；账本结论通过；独立复核由真实子代理会话签字且有 `verifier-run.json`；四道门禁全绿（总门禁必须带 `--coverage`）；工作区干净。不通过按“缺证据 / 账本错 / 产品缺陷”三类先修再派。
 
-批次分准备批、修复批、回归批；修复批的输入是准备批的复核总表。同一工作区不许并行两批。
+批次分准备批、修复批、回归批；修复批的输入是准备批的复核总表。**准备批优先**：一次收到 ≥3 条用户反馈时，第一批必须是只复验、只建档、不改代码的准备批。复核会话核验用 `scripts/check_reviewer.py`（`gate --verify-reviewer`），核对真实会话目录、创建时间与退出码。同一工作区不许并行两批。
 
 ## 五步流程
 
@@ -97,4 +97,4 @@ python3 scripts/verity.py report --ledger <07> --kind two-layer   # 两层汇报
 
 ## 版本与包结构
 
-当前版本：1.3.3。入口是本文件；规则正文在 `references/`，可复制模板在 `templates/`，端到端示例在 `examples/`，检查与打包脚本在 `scripts/`，初始化自测在 `tests/`，复核记录在 `docs/reviews/`。四种模式的索引见上方“四种模式怎么选”表，用户旅程规则见 `references/journey-acceptance.md`，多批次编排见 `references/acceptance.md` §8。
+当前版本：1.3.4。入口是本文件；规则正文在 `references/`，可复制模板在 `templates/`，端到端示例在 `examples/`，检查与打包脚本在 `scripts/`，初始化自测在 `tests/`，复核记录在 `docs/reviews/`。四种模式的索引见上方“四种模式怎么选”表，用户旅程规则见 `references/journey-acceptance.md`，多批次编排见 `references/acceptance.md` §8。

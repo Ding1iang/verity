@@ -2,6 +2,39 @@
 
 本文件记录 verity 的对外变更。版本号遵循语义化版本（`MAJOR.MINOR.PATCH`），格式参考 Keep a Changelog。
 
+## [v1.3.4] - 2026-11-12
+
+把四条批次经验做成机器可挡的规则：复核会话可核验、准备批成为默认、输入通道先写正对照、通过行的读数必须带量化信息。
+
+### 新增
+
+- `scripts/check_reviewer.py`：核对账本复核人是否有同名会话目录、目录创建时间、复核独立性，以及 `evidence/verifier-run.json` 的 verifier 与退出码；没有会话目录（如 CI）时打印跳过并退出 0。带 `--selftest`，用临时目录造假会话，不依赖本机真实会话。
+- `scripts/verity.py gate --verify-reviewer`：开启后调用复核会话核验，失败即 gate 失败；默认关闭，保持原有门禁不变。
+- `scripts/check_evidence.py` 新增 `E_READING_MISSING`：状态“通过”的行，读数为空或只有“正常/通过/无异常/ok”这类无信息词时判红；允许数字、px/vp/ms/%、`exit=`、`sha256`、`color=` 或 DB 字段。
+- `tests/fixtures/bad-reading-only-normal/`：读数只写“正常”的反例账本，由 `anti_examples.py` 断言命中 `E_READING_MISSING`。
+- `scripts/selftest.py`：新增 2 条复核会话正负例（真目录通过、伪造 id 失败），合计 12/12。
+
+### 变更
+
+- `references/acceptance.md` §8.1：一次收到 ≥3 条用户反馈时，第一批必须是只复验、只建档、不改代码的准备批。
+- `references/acceptance.md` §8.4：放行五条第 3 条写明复核会话核验由 `check_reviewer.py` 执行。
+- `references/acceptance.md` §8.7：任务书骨架增加“输入通道正对照”“复核”两行必填，并重排编号。
+- `references/acceptance.md` §5.1：补充 `E_READING_MISSING` 错误码。
+- `SKILL.md`：多批次编排补“准备批优先”和“复核会话核验用 `check_reviewer.py`”；版本号升到 1.3.4。
+- 版本号 1.3.3 → 1.3.4。
+
+### 验证
+
+- `python3 scripts/check_reviewer.py --selftest`：3/3 通过。
+- `python3 scripts/selftest.py`：12/12 通过。
+- `python3 scripts/anti_examples.py`：58/58 夹具按预期。
+- `bash tests/init-selftest.sh`：6/6 通过。
+- `python3 scripts/check_coverage.py --selftest`：11/11 通过。
+- 五个示例账本 `check_evidence.py` 全部 exit 0（04 / 05 的 workspace_hash 按新工作区重算）。
+- `python3 scripts/verity.py doctor --root . --adapter tests/fixtures/valid-adapter.json`：10/10 项通过。
+- `python3 scripts/verity.py gate`（自验收账本，`--run --team --release`）：6/6 通过；examples/04、05：5/5 通过。
+- `python3 scripts/package.py --check`：产品 25 / 30，资料 37 / 45，合计 62 / 80，691.5 KB。
+
 ## [v1.3.3] - 2026-11-12
 
 把“多批次编排”收进验收规则：一个工程拆成准备批 / 修复批 / 回归批串行跑时，调度方按统一判据放行，不再靠口头约定。

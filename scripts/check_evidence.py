@@ -77,6 +77,30 @@ V1_BLOCKING_OPEN_VALUES = {"open", "未关闭", "成立", "阻塞成立", "未�
 V1_BLOCKING_CLOSED_VALUES = {"closed", "已关闭", "关闭", "解除", "已解除"}
 # 完成审计里出现这些描述，说明该 AC 实际没有被验证为通过。
 V1_AUDIT_CONTRADICTION_WORDS = ("失败", "未进入", "未验证", "未通过", "阻塞", "不成立", "四路注入均未进入")
+# 账本“读数”可以是独立扩展列，也可以写在证据列的命令读数里。只写
+# “正常/通过/无异常/ok”这类无信息词等于没写，机器无法复核。
+V1_READING_COLUMN_ALIASES = ("读数", "实际读数", "结果")
+V1_READING_HINTS = re.compile(
+    r"\d|%|(?:px|vp|ms|exit\s*=|sha-?256|color\s*=|viewport\s*=|pixel_hash\s*=|"
+    r"runs\s*=|median\s*=|before\s*=|after\s*=|rowcount|count\s*\()",
+    re.IGNORECASE,
+)
+V1_READING_EMPTY_WORDS = {
+    "正常",
+    "通过",
+    "无异常",
+    "ok",
+    "okay",
+    "没问题",
+    "良好",
+    "成功",
+    "可用",
+    "一切正常",
+    "符合预期",
+    "done",
+    "pass",
+    "无",
+}
 
 
 @dataclass(frozen=True)
@@ -1009,6 +1033,31 @@ def v1_value_empty(value: str) -> bool:
     """判断 v1 账本单元格是否仍未填写；未覆盖行允许用“—”占位。"""
     text = value.strip()
     return v1_text_empty(text) or text in {"—", "-", "–"}
+
+
+def has_quantified_reading(value: str) -> bool:
+    """判断读数是否带可复核的量化信息。
+
+    允许的写法：数字、px/vp/ms/%、exit=、sha256、color=、viewport=、
+    pixel_hash=、runs=/median=、before=/after=、SQL/DB 字段名。
+    只写“正常/通过/无异常/ok”或空白都返回 False。
+    """
+    text = value.strip()
+    if not text:
+        return False
+    compact = re.sub(r"[\s`*_~.,，。、;；:：!！?？()（）\[\]【】<>《》\"'“”‘’/\\|—-]+", "", text)
+    if compact.lower() in V1_READING_EMPTY_WORDS:
+        return False
+    return bool(V1_READING_HINTS.search(text))
+
+
+def resolve_optional_column(header: list[str], aliases: tuple[str, ...]) -> Optional[int]:
+    """解析可选扩展列（如“读数”）；没有该列时返回 None，不改变十三列契约。"""
+    wanted = {normalize_header(alias) for alias in aliases}
+    for index, name in enumerate(header):
+        if normalize_header(name) in wanted:
+            return index
+    return None
 
 
 def resolve_v1_columns(header: list[str]) -> dict[str, int]:
@@ -2749,6 +2798,7 @@ def check_v1_ledger(
 
     header_line, header, rows = table
     columns = resolve_v1_columns(header)
+    reading_index = resolve_optional_column(header, V1_READING_COLUMN_ALIASES)
     missing = [key for key in V1_REQUIRED_COLUMNS if key not in columns]
     if missing:
         issues.append(
@@ -3029,6 +3079,24 @@ def check_v1_ledger(
                                     severity="error" if strict else "warning",
                                 )
                             )
+
+        # 读数不能是空话：状态“通过”的行必须给出可复核的量化读数。
+        # 没有独立“读数”列时，按现有解析取证据列里的命令读数；失败/阻塞
+        # 行允许写卡点，不套用这条。
+        if status == "通过":
+            reading_text = (
+                cell(row, reading_index) if reading_index is not None else values["evidence"]
+            )
+            if not has_quantified_reading(reading_text):
+                shown = reading_text.strip() or "空"
+                issues.append(
+                    Issue(
+                        "E_READING_MISSING",
+                        f"{item_id or '该行'} 判通过但读数“{shown}”没有量化信息；"
+                        "必须带数字、px/vp/ms/%、exit=、sha256、color= 或 DB 字段",
+                        number,
+                    )
+                )
 
         row_records.append(
             {

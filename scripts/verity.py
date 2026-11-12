@@ -1037,7 +1037,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     templates = ["07-acceptance.md", "task-card.md", "journey-card.md", "blocking-form.md"]
     missing_templates = [name for name in templates if not (TEMPLATE_DIR / name).is_file()]
     checks.append(("模板", not missing_templates, "齐全" if not missing_templates else "缺 " + "、".join(missing_templates)))
-    scripts = ["check_evidence.py", "check_coverage.py", "package.py"]
+    scripts = ["check_evidence.py", "check_coverage.py", "check_reviewer.py", "package.py"]
     missing_scripts = [name for name in scripts if not (REPO_ROOT / "scripts" / name).is_file()]
     checks.append(("脚本", not missing_scripts, "齐全" if not missing_scripts else "缺 " + "、".join(missing_scripts)))
     code, head = git_output(root, "rev-parse", "--short", "HEAD")
@@ -1128,9 +1128,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if matrix.is_file():
         # 这些数字是 verity 自身文档的实测读数；夹具数量升级时必须同步，否则 doctor 会把正确文档判成漂移。
         expected_counts = {
-            root / "README.md": ("57 个反例", "合计 60 / 80"),
-            root / "CHANGELOG.md": ("57/57", "60 / 80"),
-            matrix: ("57/57",),
+            root / "README.md": ("58 个反例", "合计 62 / 80"),
+            root / "CHANGELOG.md": ("58/58", "62 / 80"),
+            matrix: ("58/58",),
         }
         missing_counts: list[str] = []
         for file, needles in expected_counts.items():
@@ -1184,6 +1184,28 @@ def cmd_gate(args: argparse.Namespace) -> int:
         detail = "账本引用了 EV 证据命令，但 gate 未传 --run，命令未执行"
     steps.append(("证据账本", evidence_ok, detail))
     failures += 0 if evidence_ok else 1
+
+    # 复核会话核验默认关闭：本地模式不强制，开启后必须有真实会话目录和
+    # verifier-run.json。CI 没有会话目录时脚本自身打印跳过并返回 0。
+    if args.verify_reviewer:
+        reviewer_result = subprocess.run(
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts" / "check_reviewer.py"),
+                "--ledger",
+                str(ledger),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        reviewer_output = (reviewer_result.stdout + reviewer_result.stderr).strip()
+        reviewer_lines = [line.strip() for line in reviewer_output.splitlines() if line.strip()]
+        failed_lines = [line for line in reviewer_lines if "[FAIL]" in line]
+        reviewer_detail = failed_lines[0] if failed_lines else (reviewer_lines[-1] if reviewer_lines else "")
+        reviewer_ok = reviewer_result.returncode == 0
+        steps.append(("复核会话", reviewer_ok, reviewer_detail))
+        failures += 0 if reviewer_ok else 1
 
     coverage = Path(args.coverage).expanduser().resolve() if args.coverage else None
     if coverage is None and args.adapter:
@@ -1734,6 +1756,11 @@ def build_parser() -> argparse.ArgumentParser:
     gate_parser.add_argument("--run", action="store_true", help="按适配层 evidence_commands 真跑证据命令并阻断失败")
     gate_parser.add_argument("--base", default="HEAD~1", help="防绕过策略与 diff 的基线，默认 HEAD~1")
     gate_parser.add_argument("--release", action="store_true", help="发布模式：额外跑安全/脱敏扫描")
+    gate_parser.add_argument(
+        "--verify-reviewer",
+        action="store_true",
+        help="核验独立复核人是否对应真实会话目录（默认关闭；CI 无会话目录时自动跳过）",
+    )
     gate_parser.add_argument("--selftest", action="store_true", help="跑防绕过正负对照后退出")
     gate_parser.set_defaults(handler=cmd_gate)
 
