@@ -16,6 +16,7 @@
 
 ### 变更
 
+- `scripts/check_evidence.py`：干净工作树解包兼容 Python 3.9（`filter="data"` 只在 3.12+ 可用），修复 3.9 下 `gate --run` 直接 TypeError 的旧问题。
 - `references/acceptance.md` §8.1：一次收到 ≥3 条用户反馈时，第一批必须是只复验、只建档、不改代码的准备批。
 - `references/acceptance.md` §8.4：放行五条第 3 条写明复核会话核验由 `check_reviewer.py` 执行。
 - `references/acceptance.md` §8.7：任务书骨架增加“输入通道正对照”“复核”两行必填，并重排编号。
@@ -25,6 +26,7 @@
 
 ### 验证
 
+- Python 3.9.6 与 3.12.14 各跑一遍：selftest 12/12、anti 58/58、init 6/6、coverage 11/11、check_reviewer 3/3、doctor 10/10、三个 gate 全过、package 通过。
 - `python3 scripts/check_reviewer.py --selftest`：3/3 通过。
 - `python3 scripts/selftest.py`：12/12 通过。
 - `python3 scripts/anti_examples.py`：58/58 夹具按预期。

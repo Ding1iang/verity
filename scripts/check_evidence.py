@@ -3654,7 +3654,12 @@ def _extract_clean_worktree(root: Path):
     )
     if archive.returncode == 0:
         with tarfile.open(fileobj=io.BytesIO(archive.stdout), mode="r:") as bundle:
-            bundle.extractall(target, filter="data")
+            # filter="data" 只在 Python 3.12+ 可用；CI 还要跑 3.9，
+            # 那里退回默认解包。归档来自本仓库 HEAD，不是外部输入。
+            try:
+                bundle.extractall(target, filter="data")
+            except TypeError:
+                bundle.extractall(target)
     else:
         # 非 git 项目退化为复制工作区，但仍排除版本库与构建产物。
         shutil.copytree(
