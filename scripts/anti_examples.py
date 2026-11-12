@@ -865,6 +865,17 @@ def main() -> int:
                 print(f"[FAIL] {name}: 期望 {expected}，退出码 {code}")
                 print(output.rstrip())
 
+        # 依赖范围：声明 covers 后只按该范围判定实现变更，未声明则按全仓。
+        narrowed = module.stale_implementation_changes(
+            ["scripts/a.py", "templates/b.md"], "", ["scripts/"]
+        )
+        full = module.stale_implementation_changes(["scripts/a.py", "templates/b.md"], "", None)
+        if narrowed == ["scripts/a.py"] and full == ["scripts/a.py", "templates/b.md"]:
+            print("[PASS] covers-scope: 依赖范围收窄只影响声明的路径")
+        else:
+            failures.append("covers-scope")
+            print(f"[FAIL] covers-scope: 收窄={narrowed} 全仓={full}")
+
         # 正向对照：证据提交之后只追加 docs/reviews 下的记录文件，不应被判旧证据。
         positive_dir = root / "v2-docs-only-after-evidence"
         positive_ledger = v2_case(root, "v2-docs-only-after-evidence")

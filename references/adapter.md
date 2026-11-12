@@ -29,7 +29,7 @@
 | `schema` | 是 | 固定写 `verity-adapter/v1` | 版本升级时另立新值，不原地改语义 |
 | `schema_version` | 是 | 适配层结构版本，当前为 `1` | 必须是 1 到当前 verity 支持的整数；过新时先升级 verity，过旧时按本文件迁移 |
 | `min_verity_version` | 是 | 最低 verity 版本，如 `1.3.0` | 必须写 `x.y.z`；低于它时 `init`、`doctor` 和检查器直接报错 |
-| `evidence_commands` | 否 | 取证命令白名单数组，每项含 `id`（`EV-01` 形式）和 `command` | `check_evidence.py --run` 只执行这里的命令；未登记、非零退出或超时都阻断验收 |
+| `evidence_commands` | 否 | 取证命令白名单数组，每项含 `id`（`EV-01` 形式）、`command`，可选 `ac_ids` 与 `covers` | `check_evidence.py --run` 只执行这里的命令；未登记、非零退出或超时都阻断验收；`covers` 写这条命令依赖的路径前缀（如 `scripts/`），用于收窄实现变更的失效范围，不写表示依赖全仓 |
 | `project.name` | 是 | 项目名，只用于显示 | 不写内部代号或客户名 |
 | `project.root` | 是 | 项目根相对适配层文件所在目录的路径 | 适配层在 `<项目根>/.verity/adapter.json` 时写 `..`；命令行传 `--project-root` 时以命令行为准 |
 | `baseline.command` | 是 | 取基线提交的命令，运行后输出单个 commit ID | 没有 git 的项目写自己的版本号命令，并在 `description` 说明 |

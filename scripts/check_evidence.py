@@ -833,7 +833,9 @@ def git_output(root: Path, *args: str) -> tuple[int, str]:
     return result.returncode, result.stdout
 
 
-def stale_implementation_changes(paths: Iterable[str], prefix: str = "") -> list[str]:
+def stale_implementation_changes(
+    paths: Iterable[str], prefix: str = "", covers: Optional[list[str]] = None
+) -> list[str]:
     """返回 base..HEAD 中属于实现/规则文件的路径。
 
     prefix 是项目根相对仓库根的前缀；传入后会先剥掉前缀再比对，避免
@@ -848,6 +850,10 @@ def stale_implementation_changes(paths: Iterable[str], prefix: str = "") -> list
             changed.append(normalized)
             continue
         if any(normalized.startswith(prefix) for prefix in IMPLEMENTATION_CHANGE_PREFIXES):
+            if covers and not any(
+                normalized == cover or normalized.startswith(cover) for cover in covers
+            ):
+                continue
             changed.append(normalized)
     return changed
 
@@ -2588,6 +2594,23 @@ def check_completion_missing(
         )
 
 
+def ledger_evidence_covers(
+    text: str, evidence_commands: Optional[dict[str, dict]]
+) -> Optional[list[str]]:
+    """汇总账本引用到的证据命令声明的依赖范围；任一命令未声明就按全仓处理。"""
+    if not evidence_commands:
+        return None
+    referenced = sorted(set(re.findall(r"EV-\d{2,3}", text)))
+    covers: list[str] = []
+    for ev in referenced:
+        spec = evidence_commands.get(ev) or {}
+        declared = spec.get("covers") or []
+        if not declared:
+            return None
+        covers.extend(item for item in declared if item not in covers)
+    return covers or None
+
+
 def check_v1_ledger(
     path: Path,
     root: Path,
@@ -2662,7 +2685,8 @@ def check_v1_ledger(
                 )
             )
         else:
-            stale_paths = stale_implementation_changes(changed, project_prefix(root))
+            covers = ledger_evidence_covers(text, evidence_commands)
+            stale_paths = stale_implementation_changes(changed, project_prefix(root), covers)
             if stale_paths:
                 preview = "、".join(stale_paths[:5])
                 more = f" 等 {len(stale_paths)} 个文件" if len(stale_paths) > 5 else ""
@@ -3477,13 +3501,25 @@ def render_summary(path: Path, counts: dict[str, int], conclusion: str) -> str:
     return f"[OK] {path}：{sum(counts.values())} 行，结论={conclusion or '未写'}（{detail}）"
 
 
+def _parse_covers(value, key: str) -> list[str]:
+    """把 covers 归一成路径前缀列表；不写或空数组都表示“依赖全仓”。"""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        raise ValueError(f"evidence_commands.{key}.covers 必须是数组")
+    return [str(item).strip().replace("\\", "/") for item in value if str(item).strip()]
+
+
 def read_evidence_commands(adapter_path: Path) -> dict[str, dict]:
     """读取适配层的 evidence_commands 白名单与 AC 绑定。
 
     支持对象形式 {"EV-01": {"command": "...", "ac_ids": ["AC-01"]}} 和数组
     形式 [{"id": "EV-01", "command": "...", "ac_ids": ["AC-01"]}]；只允许
     EV-数字 ID。ac_ids 用于把每条证据命令登记到它真正覆盖的 AC，防止拿
-    搜索主流程的 EV-03 给 Ctrl+F 等其他 AC 签字。
+    搜索主流程的 EV-03 给 Ctrl+F 等其他 AC 签字。covers 可选，声明这条命令
+    依赖的路径前缀，用于收窄实现变更的失效范围；不写表示依赖全仓。
     """
     try:
         data = json.loads(adapter_path.read_text(encoding="utf-8"))
@@ -3506,7 +3542,11 @@ def read_evidence_commands(adapter_path: Path) -> dict[str, dict]:
                 ac_ids = [ac_ids]
             if not isinstance(ac_ids, list):
                 raise ValueError(f"evidence_commands.{key}.ac_ids 必须是数组")
-            commands[str(key)] = {"command": command.strip(), "ac_ids": [str(item).strip() for item in ac_ids if str(item).strip()]}
+            commands[str(key)] = {
+                "command": command.strip(),
+                "ac_ids": [str(item).strip() for item in ac_ids if str(item).strip()],
+                "covers": _parse_covers(value.get("covers"), str(key)),
+            }
     elif isinstance(raw, list):
         for item in raw:
             if not isinstance(item, dict):
@@ -3520,7 +3560,11 @@ def read_evidence_commands(adapter_path: Path) -> dict[str, dict]:
                 ac_ids = [ac_ids]
             if not isinstance(ac_ids, list):
                 raise ValueError("evidence_commands 数组项的 ac_ids 必须是数组")
-            commands[key] = {"command": command.strip(), "ac_ids": [str(value).strip() for value in ac_ids if str(value).strip()]}
+            commands[key] = {
+                "command": command.strip(),
+                "ac_ids": [str(value).strip() for value in ac_ids if str(value).strip()],
+                "covers": _parse_covers(item.get("covers"), key),
+            }
     else:
         raise ValueError("evidence_commands 必须是对象或数组")
     invalid = [key for key in commands if not re.fullmatch(r"EV-\d{2,3}", key)]
