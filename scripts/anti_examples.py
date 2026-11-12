@@ -222,14 +222,15 @@ def v2_case(
     subprocess.run(["git", "commit", "-qm", "fixture"], cwd=case_dir, check=False)
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=case_dir, capture_output=True, text=True, check=False).stdout.strip()
     text = re.sub(r"\b[0-9a-f]{40}\b", commit, text)
-    # 夹具的提交是运行时生成的，底样却写死 2026-11-08；隔天跑就会出现
+    # 夹具的提交是运行时生成的，底样里的日期是上次取证的日子；隔天跑就会出现
     # “证据日期早于 commit 日期”。这里把底样的日期整体平移到今天，
     # 复核执行时间固定为当天 00:10，避免“晚于当前时间”的假红。
     today = date.today().isoformat()
     # 底样的复核时间是取证当时的真实时刻，不能写死某一秒；统一平移到当天 00:10，
     # 与下面同步改写的执行记录时间保持一致，否则台账刷新后夹具会误报时间不一致。
     text = re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", f"{today}T00:10:00", text)
-    text = text.replace("2026-11-08", today)
+    # 底样的日期会随账本刷新而变化，按格式整体平移，不绑定某一天。
+    text = re.sub(r"\d{4}-\d{2}-\d{2}", today, text)
     # 复核表的“复跑 HEAD”是短哈希，单独替换，确保夹具绑定自己的提交。
     text = text.replace("| b60b207 |", f"| {commit[:7]} |")
     log_path = case_dir / "evidence/ev-runs.log"

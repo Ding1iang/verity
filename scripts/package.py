@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """verity 技能包打包检查与 zip 生成。
 
-规则：文件数超过 60 或总大小超过 10 MB 时直接报错，不生成 zip。
-上限按自用开源仓库的口径设置，覆盖技能内容与 GitHub 协作文件。
+规则：产品载荷（入口说明、规则、模板、脚本）与工程资产（文档、示例、
+测试与协作文件）分开计数；产品超限直接报错，资料超软上限只提醒，总数或
+总体积超限仍然报错，避免仓库无界膨胀。
 
 优先用 `git ls-files` 取“已跟踪 + 未忽略”的文件，保证 .gitignore 里
 的私有材料、凭据和构建产物不会被打进包；在没有 git 的目录里退回文件系统
@@ -24,7 +25,15 @@ import zipfile
 from pathlib import Path
 from typing import Optional
 
-DEFAULT_MAX_FILES = 60
+# 产品载荷是 AI 客户端真正加载的内容；其余算工程资产。
+PAYLOAD_FILES = {"SKILL.md"}
+PAYLOAD_PREFIXES = ("references/", "templates/", "scripts/")
+
+DEFAULT_MAX_PAYLOAD_FILES = 30
+DEFAULT_MAX_PAYLOAD_BYTES = 2 * 1024 * 1024
+DEFAULT_MAX_AUX_FILES = 45
+DEFAULT_MAX_AUX_BYTES = 8 * 1024 * 1024
+DEFAULT_MAX_FILES = 80
 DEFAULT_MAX_BYTES = 10 * 1024 * 1024
 
 # 无 git 时的目录排除表；与 .gitignore 的意图保持一致。
@@ -164,15 +173,67 @@ def collect_files(root: Path, output: Path) -> tuple[list[Path], str]:
     return [unique[key] for key in sorted(unique)], source
 
 
-def check_limits(files: list[Path], max_files: int, max_bytes: int) -> tuple[int, list[str]]:
-    """统计文件数与总大小，返回 (总字节数, 超限说明)。"""
-    total = sum(path.stat().st_size for path in files)
+def split_by_payload(files: list[Path], root: Path) -> tuple[list[Path], list[Path]]:
+    """按仓库相对路径把待打包文件分成（产品载荷, 工程资产）。"""
+    root_resolved = root.resolve()
+    payload: list[Path] = []
+    aux: list[Path] = []
+    for path in files:
+        try:
+            relative = path.resolve().relative_to(root_resolved).as_posix()
+        except ValueError:
+            relative = str(path).replace("\\", "/")
+        if relative in PAYLOAD_FILES or relative.startswith(PAYLOAD_PREFIXES):
+            payload.append(path)
+        else:
+            aux.append(path)
+    return payload, aux
+
+
+def check_limits(
+    payload: list[Path],
+    aux: list[Path],
+    *,
+    max_payload_files: int,
+    max_payload_bytes: int,
+    max_aux_files: int,
+    max_aux_bytes: int,
+    max_files: int,
+    max_bytes: int,
+) -> tuple[list[str], list[str], dict[str, int]]:
+    """按两套配额检查，返回 (问题, 警告, 统计)。
+
+    产品载荷超限是硬失败；工程资产超过软上限只给警告，留出清理空间；
+    总数或总体积超限仍然硬失败。
+    """
+    payload_bytes = sum(path.stat().st_size for path in payload)
+    aux_bytes = sum(path.stat().st_size for path in aux)
+    total = payload_bytes + aux_bytes
     problems: list[str] = []
-    if len(files) > max_files:
-        problems.append(f"文件数 {len(files)} 超过上限 {max_files}")
+    warnings: list[str] = []
+    if len(payload) > max_payload_files:
+        problems.append(f"产品文件数 {len(payload)} 超过上限 {max_payload_files}")
+    if payload_bytes > max_payload_bytes:
+        problems.append(
+            f"产品体积 {human_size(payload_bytes)} 超过上限 {human_size(max_payload_bytes)}"
+        )
+    if len(aux) > max_aux_files:
+        warnings.append(f"资料文件数 {len(aux)} 超过软上限 {max_aux_files}；建议清理历史记录")
+    if aux_bytes > max_aux_bytes:
+        warnings.append(
+            f"资料体积 {human_size(aux_bytes)} 超过软上限 {human_size(max_aux_bytes)}；建议清理历史记录"
+        )
+    if len(payload) + len(aux) > max_files:
+        problems.append(f"文件总数 {len(payload) + len(aux)} 超过上限 {max_files}")
     if total > max_bytes:
-        problems.append(f"总大小 {human_size(total)} 超过上限 {human_size(max_bytes)}")
-    return total, problems
+        problems.append(f"总体积 {human_size(total)} 超过上限 {human_size(max_bytes)}")
+    return problems, warnings, {
+        "payload_files": len(payload),
+        "payload_bytes": payload_bytes,
+        "aux_files": len(aux),
+        "aux_bytes": aux_bytes,
+        "total_bytes": total,
+    }
 
 
 def make_zip(files: list[Path], root: Path, output: Path, prefix: str) -> None:
@@ -186,45 +247,93 @@ def make_zip(files: list[Path], root: Path, output: Path, prefix: str) -> None:
 
 
 
+def _build_case(root: Path, name: str, payload_count: int, aux_count: int) -> Path:
+    """造一个只含产品载荷与工程资产两类文件的临时仓库。"""
+    case = root / name
+    for index in range(payload_count):
+        target = case / "scripts" / f"p-{index:02d}.py"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("x", encoding="utf-8")
+    for index in range(aux_count):
+        target = case / "docs" / f"a-{index:02d}.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("x", encoding="utf-8")
+    return case
+
+
 def package_selftest() -> int:
-    """验证 60 文件通过、70 文件失败的硬上限，防止为了临时记录放宽规则。"""
+    """按当前配额参数化验证四种边界；调整配额不需要改自测。"""
+    limits = {
+        "max_payload_files": DEFAULT_MAX_PAYLOAD_FILES,
+        "max_payload_bytes": DEFAULT_MAX_PAYLOAD_BYTES,
+        "max_aux_files": DEFAULT_MAX_AUX_FILES,
+        "max_aux_bytes": DEFAULT_MAX_AUX_BYTES,
+        "max_files": DEFAULT_MAX_FILES,
+        "max_bytes": DEFAULT_MAX_BYTES,
+    }
+    cases = (
+        ("payload-at-limit", DEFAULT_MAX_PAYLOAD_FILES, DEFAULT_MAX_AUX_FILES, False, False, "产品正好到上限：应通过"),
+        ("payload-over", DEFAULT_MAX_PAYLOAD_FILES + 1, 1, True, False, "产品超一个：应失败"),
+        ("aux-over", 1, DEFAULT_MAX_AUX_FILES + 1, False, True, "资料超软上限：应通过并提醒"),
+        ("total-over", DEFAULT_MAX_PAYLOAD_FILES, DEFAULT_MAX_FILES - DEFAULT_MAX_PAYLOAD_FILES + 1, True, True, "总数超限：应失败"),
+    )
     with tempfile.TemporaryDirectory(prefix="verity-package-") as temporary:
         root = Path(temporary)
-        for count, should_pass in ((60, True), (70, False)):
-            case = root / str(count)
-            case.mkdir()
-            for index in range(count):
-                (case / f"file-{index:02d}.txt").write_text("x", encoding="utf-8")
-            if count == 60:
-                # 复核报告也是仓库里的真实文件；打包规则必须用通配符把它
-                # 排除，否则每轮复核一落盘就会把 60 文件顶成 61。
-                review_dir = case / "docs" / "reviews"
-                review_dir.mkdir(parents=True)
-                (review_dir / "32-item-review-round3.md").write_text("review", encoding="utf-8")
+        for name, payload_count, aux_count, expect_fail, expect_warning, label in cases:
+            case = _build_case(root, name, payload_count, aux_count)
             files, _ = collect_files(case, case / "dist" / "verity.zip")
-            _, problems = check_limits(files, DEFAULT_MAX_FILES, DEFAULT_MAX_BYTES)
-            ok = (not problems) if should_pass else bool(problems)
-            print(f"[{'PASS' if ok else 'FAIL'}] {count} 文件：{'应通过' if should_pass else '应失败'}（{len(files)} 个；含复核报告用例）")
+            payload, aux = split_by_payload(files, case)
+            problems, warnings, _ = check_limits(payload, aux, **limits)
+            ok = bool(problems) == expect_fail and bool(warnings) == expect_warning
+            print(
+                f"[{'PASS' if ok else 'FAIL'}] {name}：{label}"
+                f"（产品 {len(payload)}，资料 {len(aux)}，问题 {len(problems)}，提醒 {len(warnings)}）"
+            )
             if not ok:
                 return 1
     return 0
+
 
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="统计 verity 技能包文件数/体积并生成 zip")
     parser.add_argument("--root", default=".", help="要打包的仓库根目录，默认当前目录")
     parser.add_argument("--output", help="zip 输出路径，默认 <root>/dist/verity.zip")
     parser.add_argument("--prefix", default="verity", help="zip 内的根目录名；传空字符串表示不套目录")
-    parser.add_argument("--max-files", type=int, default=DEFAULT_MAX_FILES, help="文件数上限，默认 60")
+    parser.add_argument("--max-files", type=int, default=DEFAULT_MAX_FILES, help="文件总数硬上限，默认 80")
     parser.add_argument(
         "--max-bytes",
         type=int,
         default=DEFAULT_MAX_BYTES,
-        help="总大小上限（字节），默认 10 MB",
+        help="总体积硬上限（字节），默认 10 MB",
+    )
+    parser.add_argument(
+        "--max-payload-files",
+        type=int,
+        default=DEFAULT_MAX_PAYLOAD_FILES,
+        help="产品载荷文件数上限，默认 30",
+    )
+    parser.add_argument(
+        "--max-payload-bytes",
+        type=int,
+        default=DEFAULT_MAX_PAYLOAD_BYTES,
+        help="产品载荷体积上限（字节），默认 2 MB",
+    )
+    parser.add_argument(
+        "--max-aux-files",
+        type=int,
+        default=DEFAULT_MAX_AUX_FILES,
+        help="工程资产文件数软上限，默认 45",
+    )
+    parser.add_argument(
+        "--max-aux-bytes",
+        type=int,
+        default=DEFAULT_MAX_AUX_BYTES,
+        help="工程资产体积软上限（字节），默认 8 MB",
     )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="只统计和检查，不生成 zip")
     mode.add_argument("--zip", action="store_true", help="生成 zip（不传参数时的默认行为）")
-    mode.add_argument("--selftest", action="store_true", help="运行 60 通过 / 70 失败的上限反例")
+    mode.add_argument("--selftest", action="store_true", help="运行两套配额的边界反例")
     args = parser.parse_args(argv)
 
     if args.selftest:
@@ -233,9 +342,17 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not root.is_dir():
         print(f"用法错误：根目录不存在：{root}", file=sys.stderr)
         return 2
-    if args.max_files < 1 or args.max_bytes < 1:
-        print("用法错误：上限必须是正整数", file=sys.stderr)
-        return 2
+    for name in (
+        "max_files",
+        "max_bytes",
+        "max_payload_files",
+        "max_payload_bytes",
+        "max_aux_files",
+        "max_aux_bytes",
+    ):
+        if getattr(args, name) < 1:
+            print(f"用法错误：{name} 必须是正整数", file=sys.stderr)
+            return 2
 
     output = (
         Path(args.output).expanduser().resolve()
@@ -243,13 +360,33 @@ def main(argv: Optional[list[str]] = None) -> int:
         else (root / "dist" / "verity.zip")
     )
     files, source = collect_files(root, output)
-    total, problems = check_limits(files, args.max_files, args.max_bytes)
+    payload, aux = split_by_payload(files, root)
+    problems, warnings, stats = check_limits(
+        payload,
+        aux,
+        max_payload_files=args.max_payload_files,
+        max_payload_bytes=args.max_payload_bytes,
+        max_aux_files=args.max_aux_files,
+        max_aux_bytes=args.max_aux_bytes,
+        max_files=args.max_files,
+        max_bytes=args.max_bytes,
+    )
 
     print("verity 打包检查")
     print(f"  根目录：{root}")
     print(f"  文件来源：{source}")
-    print(f"  文件数：{len(files)} / {args.max_files}")
-    print(f"  总大小：{human_size(total)} / {human_size(args.max_bytes)}")
+    print(
+        f"  文件数：产品 {stats['payload_files']} / {args.max_payload_files}，"
+        f"资料 {stats['aux_files']} / {args.max_aux_files}，"
+        f"合计 {len(files)} / {args.max_files}"
+    )
+    print(
+        f"  总大小：产品 {human_size(stats['payload_bytes'])} / {human_size(args.max_payload_bytes)}，"
+        f"资料 {human_size(stats['aux_bytes'])} / {human_size(args.max_aux_bytes)}，"
+        f"合计 {human_size(stats['total_bytes'])} / {human_size(args.max_bytes)}"
+    )
+    for warning in warnings:
+        print(f"  提醒：{warning}")
 
     if problems:
         for problem in problems:
