@@ -1,10 +1,10 @@
-# 任务卡：verity v1.3.0 自验收
+# 任务卡：verity v1.3.4 自验收
 
 ## 基本信息
 
 | 字段 | 内容 |
 |---|---|
-| 任务编号 | verity-self-acceptance-1.3.0 |
+| 任务编号 | verity-self-acceptance-1.3.4 |
 | 任务卡版本 | v2 |
 | schema_version | 2 |
 | 平台 | 本机 macOS；Python 3 标准库；git 工作区 |
@@ -41,7 +41,7 @@
 | 目标 | 把 32 项优化落到规则、模板、检查器、门禁、夹具、文档和自验收，形成 v1.3.0 |
 | 范围外 | 不实现清单“不抄”的整套技能包、强制 issue tracker、每任务 worktree、七节 spec、ZK/FHE、JSON-only 门禁、独立 goal-setter、rebar、Java/Spring 绑定、teach/prototype 清单 |
 | 关键决定 | v1 schema 2 十三列；十段必需结构；证据身份 SHA-256；独立复核逐 AC；gate 本地入口；分析文档不进发布包 |
-| 验收方向 | 以 8 条 verify 命令、49 个反例、examples/04 与 05、init 自测和矩阵 32 行为准 |
+| 验收方向 | 以第 5 节验证命令、58 个反例、examples/04 与 05、init 自测和矩阵 32 行为准 |
 
 ## 目标
 
@@ -51,11 +51,11 @@
 
 ### 做
 
-- `scripts/`：检查器、覆盖检查、反例、打包、verity 工具链。
+- `scripts/`：检查器、覆盖检查、复核会话核验、反例、打包、verity 工具链。
 - `templates/`：任务卡、07 账本、旅程卡、举证单、适配层、覆盖总表。
 - `references/`、`SKILL.md`、`README.md`、`CHANGELOG.md`、`VERSION`。
 - `examples/04-project-v1/`、`examples/05-release/`、`docs/optimization-matrix.md`、`docs/reviews/`。
-- `tests/` 与 `.github/` 的既有自测入口。
+- `tests/`（含读数反例夹具）与 `.github/` 的既有自测入口。
 
 ### 不做
 
@@ -103,8 +103,12 @@
 | AC-02 | 给定空目录运行 init，应生成 journey-01.md，且 07 与旅程卡都不预填“通过” | J-01 / 步骤 1 | A | 运行 init 自测并读生成文件 |
 | AC-03 | 给定 examples/04，带 `--adapter tests/fixtures/valid-adapter.json --run` 的 gate 应 5/5 通过；给定 examples/05，gate 应 5/5 通过；给定坏提交，anti-bypass 应报红 | J-01 / 步骤 3 | A | 运行 gate --selftest 与两次 gate |
 | AC-04 | 运行 manifest --write 后再 --check，核对输出应报告 7 个文件且 SHA-256 一致 | J-01 / 步骤 2 | A | 运行 manifest --write / --check |
-| AC-05 | 运行 8 条 verify 命令，应全部 exit 0，且 selftest 5/5、anti 49/49、coverage 9/9 | J-01 / 步骤 3 | A | 运行 verify 命令并保存日志 |
-| AC-06 | 检查 SKILL/README/references/templates/scripts，版本 1.3.0、schema 2 十三列、六模板、四条硬规则、49 类反例应一致 | J-01 / 步骤 3 | A | grep 计数与 package --check |
+| AC-05 | 运行第 5 节列出的 11 条验证命令，应返回退出码 0；selftest 12/12、anti 58/58、coverage 11/11 与读数一致 | J-01 / 步骤 3 | A | 运行 verify 命令并保存日志 |
+| AC-06 | 检查 SKILL/README/references/templates/scripts，版本 1.3.4、schema 2 十三列、六模板、四条硬规则、58 类反例应一致 | J-01 / 步骤 3 | A | grep 计数与 package --check |
+| AC-07 | 运行 `check_reviewer.py --selftest`，应返回退出码 0；给定伪造复核人 id 应返回退出码 1；gate 不带 `--verify-reviewer` 时步骤数不变 | J-01 / 步骤 3 | A | 运行 check_reviewer --selftest 与 gate |
+| AC-08 | 检查 `references/acceptance.md` §8.1/§8.4/§8.7 与 `SKILL.md`，grep 输出应包含准备批优先、输入通道正对照、复核会话核验 3 处规则 | J-01 / 步骤 1 | A | grep 规则原文 |
+| AC-09 | 运行 check_evidence 检查读数只写“ok”的反例账本，应返回退出码 1 且命中 `E_READING_MISSING`；五个示例账本应返回退出码 0 | J-01 / 步骤 2 | A | 运行 anti_examples 与 check_evidence |
+| AC-10 | 运行 VERSION 与 manifest --check，应为 1.3.4，且自验收与示例账本的 workspace_hash、SHA-256 与最终提交一致 | J-01 / 步骤 3 | A | 运行 manifest --check 与 gate |
 
 ## 覆盖总表对齐
 

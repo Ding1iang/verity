@@ -1,11 +1,11 @@
 {
   "schema": "verity-manifest/v1",
   "created_at": "2026-11-12",
-  "workspace_hash": "87fd6cf1fd8e2d2b61acbced392bd622792be5fdb00c3175dbea030eb85fb4b0",
+  "workspace_hash": "a08cb8a191ab49df57401a8c93cce1cb22e650ade455631235aeebe8ad4cfa59",
   "files": [
     {
       "path": "examples/05-release/07-验收回归清单.md",
-      "sha256": "ceec9ea0238da23835d39a5964bbf689204134231ee2759f365af0f815510281",
+      "sha256": "6b319f2cfb2e38cd3ca2e2c30c2568599156fd4581353d75d76b2d50f786054d",
       "bytes": 6314,
       "tracked": true,
       "source_command": "python3 scripts/check_evidence.py examples/05-release/07-验收回归清单.md"

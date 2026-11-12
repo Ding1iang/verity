@@ -1,8 +1,8 @@
-# verity v1.3.3 自验收验证日志
+# verity v1.3.4 自验收验证日志
 
 - 生成日期：2026-11-12
-- 代码 HEAD：0d7d784742b59c90f09dd7383dfc3f498cd48594（最终实现提交；此后仅允许记录性改动）
-- 环境：macOS / Python 3 标准库
+- 代码 HEAD：746e18b47e04ee038a8a0e34b2eba5fe148b0070（最终实现提交；此后仅允许记录性改动）
+- 环境：macOS / Python 3 标准库（本机 3.13；CI 覆盖 3.9 / 3.12）
 - 执行者：builder
 
 ## 1. 语法与单元验证
@@ -10,11 +10,12 @@
 | 序号 | 命令 | 实测读数 |
 |---|---|---|
 | 1 | `python3 -m py_compile scripts/*.py` | 退出 0，无输出 |
-| 2 | `python3 scripts/selftest.py` | `结果：10/10 通过` |
-| 3 | `python3 scripts/anti_examples.py` | `结果：57/57 夹具按预期` |
+| 2 | `python3 scripts/selftest.py` | `结果：12/12 通过` |
+| 3 | `python3 scripts/anti_examples.py` | `结果：58/58 夹具按预期` |
 | 4 | `python3 scripts/check_coverage.py --selftest` | `结果：11/11 通过` |
 | 5 | `bash tests/init-selftest.sh` | `结果：6/6 通过` |
-| 6 | `python3 scripts/package.py --check` | `产品 24 / 30，资料 36 / 45，合计 60 / 80` |
+| 6 | `python3 scripts/check_reviewer.py --selftest` | `结果：3/3 通过` |
+| 7 | `python3 scripts/package.py --check` | `产品 25 / 30，资料 37 / 45，合计 62 / 80`，699.0 KB |
 
 ## 2. 适配层预检
 
@@ -23,11 +24,14 @@
 
 ## 3. 门禁自检
 
-`python3 scripts/verity.py gate --selftest` → 范围锁、清单篡改、适配层版本等正负对照全部 `[PASS]`。
+- `python3 scripts/verity.py gate --selftest` → 范围锁、清单篡改、适配层版本等正负对照全部 `[PASS]`。
+- `python3 scripts/verity.py gate --root . --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run --team --release` → `结果：通过（6/6）`。
+- `python3 scripts/verity.py gate --root . --ledger examples/04-project-v1/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run` → `结果：通过（5/5）`。
+- `python3 scripts/verity.py gate --root . --ledger examples/05-release/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run` → `结果：通过（5/5）`。
 
 ## 4. 证据命令执行记录
 
-`--run` 在干净工作树执行 EV-01，记录写入 `evidence/ev-runs.log`。
+`--run` 在干净工作树执行 EV-01（`python3 scripts/selftest.py`），退出 0，输出摘要 `结果：12/12 通过`，记录写入 `evidence/ev-runs.log`。
 
 ## 5. 说明
 
