@@ -2,6 +2,30 @@
 
 本文件记录 verity 的对外变更。版本号遵循语义化版本（`MAJOR.MINOR.PATCH`），格式参考 Keep a Changelog。
 
+## [v1.3.3] - 2026-11-12
+
+把“多批次编排”收进验收规则：一个工程拆成准备批 / 修复批 / 回归批串行跑时，调度方按统一判据放行，不再靠口头约定。
+
+### 新增
+
+- `references/acceptance.md` §8「多批次编排（调度方）」：批次类型（准备批 / 修复批 / 回归批）、角色与串行约束、每批五步、放行五条、三类缺口、三条红线、任务书八段与最小骨架、收尾规则。
+- `SKILL.md` 增加「多批次编排」入口段，指向 §8，并写明“同一工作区不许并行两批”。
+
+### 变更
+
+- 版本号 1.3.2 → 1.3.3。
+- 不新增文件；打包实测产品 24 / 30、资料 36 / 45、合计 60 / 80。
+
+### 验证
+
+- `python3 scripts/selftest.py`：10/10 通过。
+- `bash tests/init-selftest.sh`：6/6 通过。
+- `python3 scripts/check_coverage.py --selftest`：11/11 通过。
+- `python3 scripts/anti_examples.py`：57/57 夹具按预期。
+- 五个示例账本 `check_evidence.py` 全部 exit 0（04 / 05 的 workspace_hash 按新工作区重算）。
+- `python3 scripts/package.py --check`：产品 24 / 30，资料 36 / 45，合计 60 / 80，660.5 KB。
+- `python3 scripts/verity.py doctor --root .`：6/6；带适配层 10/10。
+
 ## [v1.3.2] - 2026-11-11
 
 新增“账本内部矛盾”校验：包结论写通过时，欠账、阻塞、复核、旧产物和完成审计必须彼此一致，不能再靠逐行状态相加得出假通过。

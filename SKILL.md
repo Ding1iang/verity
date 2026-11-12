@@ -1,6 +1,6 @@
 ---
 name: verity
-version: 1.3.2
+version: 1.3.3
 description: 当 AI 准备说完成时，用任务卡、证据分级、用户旅程、v1 schema 2 十三列与三包结论验证；不能证明就标未交付或阻塞
 ---
 
@@ -40,6 +40,14 @@ description: 当 AI 准备说完成时，用任务卡、证据分级、用户旅
 ## 接到项目上
 
 项目专属事实（路径、门禁命令、设备入口、脱敏规则）写在项目自己的适配层：复制 `templates/adapter.json` 到项目的 `.verity/adapter.json`，按 `references/adapter.md` 填写，不复制进 verity 仓库。检查器按 `verity-适配层.json` → `.verity/adapter.json` → `verity-adapter.json` → `adapter.json` 自动发现；项目可以把适配层放在任意位置，并在命令里用 `--adapter <显式路径>` 覆盖，显式路径优先。复制 `templates/coverage-master.md` 建覆盖总表，每个在用模块占一行，只记 07 是否存在、是否不适用；通过/失败仍只从 07 读。用 `scripts/check_coverage.py` 检查覆盖关系，它只查结构，不执行命令，也不改账本。
+
+## 多批次编排
+
+一个工程拆成多批串行跑时，调度方按 `references/acceptance.md` §8 执行：每批一个新会话、一份自包含任务书，每 15 分钟只读巡检，批结束按放行五条判定，全绿才派下一批。
+
+放行五条：批次标签解引用后等于最终提交；账本结论通过；独立复核由真实子代理会话签字且有 `verifier-run.json`；四道门禁全绿（总门禁必须带 `--coverage`）；工作区干净。不通过按“缺证据 / 账本错 / 产品缺陷”三类先修再派。
+
+批次分准备批、修复批、回归批；修复批的输入是准备批的复核总表。同一工作区不许并行两批。
 
 ## 五步流程
 
@@ -89,4 +97,4 @@ python3 scripts/verity.py report --ledger <07> --kind two-layer   # 两层汇报
 
 ## 版本与包结构
 
-当前版本：1.3.2。入口是本文件；规则正文在 `references/`，可复制模板在 `templates/`，端到端示例在 `examples/`，检查与打包脚本在 `scripts/`，初始化自测在 `tests/`，复核记录在 `docs/reviews/`。四种模式的索引见上方“四种模式怎么选”表，用户旅程规则见 `references/journey-acceptance.md`。
+当前版本：1.3.3。入口是本文件；规则正文在 `references/`，可复制模板在 `templates/`，端到端示例在 `examples/`，检查与打包脚本在 `scripts/`，初始化自测在 `tests/`，复核记录在 `docs/reviews/`。四种模式的索引见上方“四种模式怎么选”表，用户旅程规则见 `references/journey-acceptance.md`，多批次编排见 `references/acceptance.md` §8。
