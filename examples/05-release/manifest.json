@@ -1,7 +1,7 @@
 {
   "schema": "verity-manifest/v1",
   "created_at": "2026-11-12",
-  "workspace_hash": "36c22c9cf1a3cd3ff55d482d41ac8ee80d46cba5a9208d788db557da172fe68e",
+  "workspace_hash": "a860b15d066bea79f4632073f4bc7c386fb0ab06769ecfc8efe749d5cfbf4aa1",
   "files": [
     {
       "path": "examples/05-release/07-验收回归清单.md",
@@ -26,8 +26,8 @@
     },
     {
       "path": "examples/05-release/evidence/ev-runs.log",
-      "sha256": "2206483cf74b1c458e7eca3abfa56c911f78531fecd075dbb43e40373202a055",
-      "bytes": 546,
+      "sha256": "a78679069f959001c0886e220cc35d04ea602f0cb1a0a365648b6e7e696ce1b6",
+      "bytes": 555,
       "tracked": true,
       "source_command": "见 07 账本对应证据行的取证方式"
     },
