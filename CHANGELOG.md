@@ -22,6 +22,7 @@
 - `tests/fixtures/valid-adapter.json`：`EV-01` 补 `ac_ids`，让自验收和 v1 示例账本在带适配层的门禁里完成独立复核绑定。
 - `scripts/verity.py doctor`：文档计数断言里的反例数量从写死的 50 改到实际的 55，避免正确的文档被自己判成漂移。
 - `.github/workflows/ci.yml`：修复说明书逐字比对脚本的续行符转义，单反斜杠会被 Python 三引号折叠成空格，导致该断言恒失败。
+- `scripts/verity.py identity`：新增 `--write` / `--check`，按当前文件重算并回填证据身份表的 SHA-256、字节数与 workspace_hash，减少手工抄写。
 - `scripts/package.py`：打包预算拆成“产品载荷 / 工程资产”两套配额（当前产品 24 / 30、资料 36 / 45、合计 60 / 80），产品超限才失败，资料超软上限只提醒；自测按配额参数化，调整上限不必改自测。
 - `scripts/check_evidence.py`：适配层 `evidence_commands` 支持 `covers` 声明依赖路径，实现变更按依赖范围判定失效，未声明仍按全仓。
 - `scripts/check_evidence.py`：证据文件 mtime 早于提交日期时改记为提醒（`E_STALE_MTIME`），内容哈希才是主判据，`--strict` 才阻断；新增两条时间判据反例。

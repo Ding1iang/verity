@@ -1761,12 +1761,113 @@ def build_parser() -> argparse.ArgumentParser:
     upgrade_parser.add_argument("ledger", metavar="账本", help="要迁移的 07 账本")
     upgrade_parser.set_defaults(handler=cmd_upgrade)
 
+    identity_parser = subparsers.add_parser("identity", help="重算或校验证据身份表")
+    identity_parser.add_argument("--root", default=".", help="项目根目录")
+    identity_parser.add_argument("--ledger", required=True, help="07 账本路径")
+    identity_mode = identity_parser.add_mutually_exclusive_group(required=True)
+    identity_mode.add_argument("--write", action="store_true", help="把实算值写回账本")
+    identity_mode.add_argument("--check", action="store_true", help="只校验，不改文件")
+    identity_parser.set_defaults(handler=cmd_identity)
+
     scan_parser = subparsers.add_parser("scan", help="扫描令牌、私钥、明文凭据和个人信息")
     scan_parser.add_argument("--root", default=".", help="扫描根目录")
     scan_parser.add_argument("--paths", nargs="*", help="只扫描指定文件/目录")
     scan_parser.add_argument("--release", action="store_true", help="发布模式：命中即失败")
     scan_parser.set_defaults(handler=cmd_scan)
     return parser
+
+
+def _identity_module():
+    """延迟加载同目录的账本检查器，复用工作区指纹算法。"""
+    scripts_dir = str(Path(__file__).resolve().parent)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    import check_evidence
+
+    return check_evidence
+
+
+def update_identity_table(root: Path, ledger: Path, write: bool) -> int:
+    """按当前文件重算证据身份表，返回退出码。
+
+    write=True 时把 SHA-256、字节数、workspace_hash 写回账本；否则只比对。
+    表格列顺序与模板一致：证据 / SHA-256 / 字节数 / 构建号 / 环境 / 取证时间 /
+    workspace_hash / 结构化读数。
+    """
+    if not ledger.is_file():
+        print(f"用法错误：账本不存在：{ledger}", file=sys.stderr)
+        return 2
+    module = _identity_module()
+    workspace = module.workspace_fingerprint(root, ledger.parent)
+    lines = ledger.read_text(encoding="utf-8").split("\n")
+    section = next((i for i, line in enumerate(lines) if line.strip() == "## 证据身份"), None)
+    if section is None:
+        print("检查失败：账本缺少“## 证据身份”段", file=sys.stderr)
+        return 1
+    start = None
+    for index in range(section, len(lines)):
+        if lines[index].startswith("|") and "证据" in lines[index] and "SHA-256" in lines[index]:
+            start = index + 2  # 跳过表头与分隔行
+            break
+    if start is None:
+        print("检查失败：证据身份段没有表头", file=sys.stderr)
+        return 1
+
+    changed = 0
+    failures = 0
+    rows = 0
+    index = start
+    while index < len(lines) and lines[index].startswith("|"):
+        cells = lines[index].split("|")
+        if len(cells) < 9:
+            index += 1
+            continue
+        rows += 1
+        evidence_rel = cells[1].strip().strip("`")
+        evidence_path = ledger.parent / evidence_rel
+        if not evidence_path.is_file():
+            print(f"[FAIL] {evidence_rel}：文件不存在")
+            failures += 1
+            index += 1
+            continue
+        digest = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+        size = evidence_path.stat().st_size
+        actual = (cells[2].strip(), cells[3].strip(), cells[7].strip())
+        expected = (digest, str(size), workspace)
+        if actual == expected:
+            print(f"[OK] {evidence_rel}：身份一致")
+        elif write:
+            cells[2] = f" {digest} "
+            cells[3] = f" {size} "
+            cells[7] = f" {workspace} "
+            lines[index] = "|".join(cells)
+            changed += 1
+            print(f"[OK] {evidence_rel}：已回填 SHA-256、字节数与 workspace_hash")
+        else:
+            print(f"[FAIL] {evidence_rel}：身份与当前文件不一致")
+            failures += 1
+        index += 1
+
+    if rows == 0:
+        print("检查失败：证据身份段没有数据行", file=sys.stderr)
+        return 1
+    if write and changed:
+        ledger.write_text("\n".join(lines), encoding="utf-8")
+    if failures:
+        print(f"检查失败：{failures} 行不一致；确认无误后加 --write 回填")
+        return 1
+    if write:
+        print(f"已回填 {changed} 行；共 {rows} 行")
+    else:
+        print(f"证据身份一致：{rows} 行")
+    return 0
+
+
+def cmd_identity(args: argparse.Namespace) -> int:
+    """identity 子命令：重算或校验证据身份表。"""
+    root = Path(args.root).expanduser().resolve()
+    ledger = Path(args.ledger).expanduser().resolve()
+    return update_identity_table(root, ledger, args.write)
 
 
 def cmd_manifest(args: argparse.Namespace) -> int:

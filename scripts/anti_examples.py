@@ -876,6 +876,50 @@ def main() -> int:
             failures.append("covers-scope")
             print(f"[FAIL] covers-scope: 收窄={narrowed} 全仓={full}")
 
+        # 证据身份回填：篡改后 --check 必须失败，--write 后恢复一致。
+        identity_dir = root / "identity"
+        identity_ledger = v2_case(root, "identity")
+        identity_rows = identity_ledger.read_text(encoding="utf-8").splitlines()
+        tampered = False
+        for row_index, line in enumerate(identity_rows):
+            if line.startswith("| README.md |"):
+                cells = line.split("|")
+                cells[2] = " " + "0" * 64 + " "
+                identity_rows[row_index] = "|".join(cells)
+                tampered = True
+                break
+        identity_ledger.write_text("\n".join(identity_rows), encoding="utf-8")
+
+        def run_identity(mode: str) -> tuple[int, str]:
+            process = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "scripts" / "verity.py"),
+                    "identity",
+                    "--root",
+                    str(identity_dir),
+                    "--ledger",
+                    str(identity_ledger),
+                    mode,
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            return process.returncode, process.stdout + process.stderr
+
+        check_code, check_out = run_identity("--check")
+        write_code, _ = run_identity("--write")
+        recheck_code, _ = run_identity("--check")
+        if tampered and check_code != 0 and write_code == 0 and recheck_code == 0:
+            print("[PASS] identity-write: 篡改后校验失败，回填后恢复一致")
+        else:
+            failures.append("identity-write")
+            print(
+                f"[FAIL] identity-write: 篡改={tampered} check={check_code} write={write_code} recheck={recheck_code}"
+            )
+            print(check_out.rstrip())
+
         # 正向对照：证据提交之后只追加 docs/reviews 下的记录文件，不应被判旧证据。
         positive_dir = root / "v2-docs-only-after-evidence"
         positive_ledger = v2_case(root, "v2-docs-only-after-evidence")
