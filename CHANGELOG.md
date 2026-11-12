@@ -33,7 +33,7 @@
 - 五个示例账本 `check_evidence.py` 全部 exit 0（04 / 05 的 workspace_hash 按新工作区重算）。
 - `python3 scripts/verity.py doctor --root . --adapter tests/fixtures/valid-adapter.json`：10/10 项通过。
 - `python3 scripts/verity.py gate`（自验收账本，`--run --team --release`）：6/6 通过；examples/04、05：5/5 通过。
-- `python3 scripts/package.py --check`：产品 25 / 30，资料 37 / 45，合计 62 / 80，691.5 KB。
+- `python3 scripts/package.py --check`：产品 25 / 30，资料 37 / 45，合计 62 / 80，699.0 KB。
 
 ## [v1.3.3] - 2026-11-12
 

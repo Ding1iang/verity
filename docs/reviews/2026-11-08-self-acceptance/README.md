@@ -1,13 +1,13 @@
-# verity v1.3.0 自验收
+# verity v1.3.4 自验收
 
-这份记录用 verity 自己的 v1 schema 2 账本验收 v1.3.0 的 32 项优化，证明“规则、模板、检查器、门禁”不是只写在说明里。
+这份记录用 verity 自己的 v1 schema 2 账本验收 v1.3.4 的四项批次经验，证明“规则、模板、检查器、门禁”不是只写在说明里。
 
 ## 文件
 
-- `task-card.md`：全流程任务卡，含车道与风险、立卡前盘问、spec-lite、范围锁和 AC-01–06。
+- `task-card.md`：全流程任务卡，含车道与风险、立卡前盘问、spec-lite、范围锁和 AC-01–10。
 - `journey-01.md`：从 init 到 gate 的 3 步用户旅程，结论通过。
 - `07-验收回归清单.md`：十三列账本、证据身份、完成审计、独立复核和复盘。
-- `evidence/04-verification.log`：本机真实命令日志，包含 8 条 verify、49 个反例、gate 正负对照、doctor、report、metrics、scan、判据/盘问/spec 负向夹具和 upgrade。
+- `evidence/04-verification.log`：本机真实命令日志，包含第 5 节 11 条验证命令、58 个反例、check_reviewer 正负例、gate 正负对照、doctor 和打包读数。
 - `manifest.json`：证据包清单，记录文件、SHA-256、字节数、是否被 git 跟踪和来源命令。
 - `blocking-form.md`：本批无阻塞，保留结构供复核。
 
@@ -27,7 +27,7 @@ python3 scripts/verity.py manifest --root . \
 
 ```text
 这批可以交付，交付结论是“通过”。
-共 6 条验收项，6 条是关键项。
+共 10 条验收项，10 条是关键项。
 下一步：按账本收口并归档证据。
 ```
 
@@ -35,5 +35,5 @@ python3 scripts/verity.py manifest --root . \
 
 ## 边界
 
-- 证据是 2026-11-08 在本机工作区生成，构建号 `verity-1.3.0`。
-- 账本 commit 列绑定实现提交；自验收证据随后单独提交，最终提交号由任务汇报记录。
+- 证据是 2026-11-12 在本机工作区生成，构建号 `verity-1.3.4`。
+- 账本 commit 列绑定实现提交 ed11f31；自验收证据随后单独提交，最终提交号由任务汇报记录。
