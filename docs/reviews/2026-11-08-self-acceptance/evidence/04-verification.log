@@ -2,7 +2,7 @@
 
 - 生成日期：2026-11-12
 - 代码 HEAD：9d4a1da09374d08162bd058334c985d4ba0d6640（最终实现提交；此后仅允许记录性改动）
-- 环境：macOS / Python 3 标准库（本机 3.13；CI 覆盖 3.9 / 3.12）
+- 环境：macOS / Python 3 标准库（本机 3.9.6 / 3.12.14 / 3.13.1 均实跑）
 - 执行者：builder
 
 ## 1. 语法与单元验证
@@ -15,7 +15,7 @@
 | 4 | `python3 scripts/check_coverage.py --selftest` | `结果：11/11 通过` |
 | 5 | `bash tests/init-selftest.sh` | `结果：6/6 通过` |
 | 6 | `python3 scripts/check_reviewer.py --selftest` | `结果：3/3 通过` |
-| 7 | `python3 scripts/package.py --check` | `产品 25 / 30，资料 37 / 45，合计 62 / 80`，699.0 KB |
+| 7 | `python3 scripts/package.py --check` | `产品 25 / 30，资料 37 / 45，合计 62 / 80`，699.6 KB |
 
 ## 2. 适配层预检
 
