@@ -1,7 +1,7 @@
 # verity v1.3.2 自验收验证日志
 
-- 生成日期：2026-11-11
-- 代码 HEAD：62f107364ab4017fff969150003e3a72156ef891（最终实现提交；此后仅允许记录性改动）
+- 生成日期：2026-11-12
+- 代码 HEAD：b08d951c8ee3b748d9ba19f9f938b4c6328e1e89（最终实现提交；此后仅允许记录性改动）
 - 环境：macOS / Python 3 标准库
 - 执行者：builder
 
@@ -11,10 +11,10 @@
 |---|---|---|
 | 1 | `python3 -m py_compile scripts/*.py` | 退出 0，无输出 |
 | 2 | `python3 scripts/selftest.py` | `结果：10/10 通过` |
-| 3 | `python3 scripts/anti_examples.py` | `结果：55/55 夹具按预期` |
+| 3 | `python3 scripts/anti_examples.py` | `结果：57/57 夹具按预期` |
 | 4 | `python3 scripts/check_coverage.py --selftest` | `结果：11/11 通过` |
 | 5 | `bash tests/init-selftest.sh` | `结果：6/6 通过` |
-| 6 | `python3 scripts/package.py --check` | `文件数：60 / 60`；`检查通过（--check 模式，未生成 zip）` |
+| 6 | `python3 scripts/package.py --check` | `产品 24 / 30，资料 36 / 45，合计 60 / 80` |
 
 ## 2. 适配层预检
 
@@ -27,11 +27,7 @@
 
 ## 4. 证据命令执行记录
 
-`--run` 在干净工作树执行 EV-01，记录写入 `evidence/ev-runs.log`：
-
-```json
-{"time": "2026-11-11T16:14:18", "head": "62f107364ab4017fff969150003e3a72156ef891", "ev": "EV-01", "command": "python3 scripts/selftest.py", "ac_id": "AC-01", "ac_ids": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06"], "hap_sha": "", "exit": 0, "output": "[PASS] bad-v1-old-hap：退出 1，命中 E_ARTIFACT_STALE | [PASS] bad-v1-audit-contradiction：退出 1，命中 E_AUDIT_CONTRADICTION | 结果：10/10 通过", "output_sha256": "3512eba83dce545a0ec724a981fc7f8566b7337cb9372f11486e7762529901bd", "summary": "结果：10/10 通过"}
-```
+`--run` 在干净工作树执行 EV-01，记录写入 `evidence/ev-runs.log`。
 
 ## 5. 说明
 
