@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""生成并运行 55 类反例，逐条断言检查器报出指定错误码。
+"""生成并运行 57 类反例，逐条断言检查器报出指定错误码。
 
 这个脚本是给 verifier 用的“反例预备清单”执行器：所有样本在临时目录里
 即时生成，不依赖仓库里的示例文件，也不写入用户数据。每个样本都故意只
@@ -156,7 +156,7 @@ def check_evidence_module():
     return module
 
 
-def run_checker(ledger: Path, root: Path) -> tuple[int, str]:
+def run_checker(ledger: Path, root: Path, extra_args: tuple[str, ...] = ()) -> tuple[int, str]:
     """调用检查器，合并 stdout/stderr，便于断言具体错误码。"""
     process = subprocess.run(
         [
@@ -167,6 +167,7 @@ def run_checker(ledger: Path, root: Path) -> tuple[int, str]:
             "v1",
             "--root",
             str(root),
+            *extra_args,
         ],
         cwd=str(REPO_ROOT),
         capture_output=True,
@@ -888,6 +889,30 @@ def main() -> int:
         else:
             failures.append("v2-docs-only-after-evidence")
             print(f"[FAIL] v2-docs-only-after-evidence: 退出码 {code}")
+            print(output.rstrip())
+
+        # 证据文件的时间只是兜底信号：默认只提醒，--strict 才阻断。
+        mtime_dir = root / "stale-mtime"
+        mtime_ledger = v2_case(root, "stale-mtime")
+        old_timestamp = 946684800  # 2000-01-01，早于夹具提交日期
+        for evidence_file in mtime_dir.rglob("*.md"):
+            os.utime(evidence_file, (old_timestamp, old_timestamp))
+        total += 2
+        code, output = run_checker(mtime_ledger, mtime_dir)
+        if code == 0 and "E_STALE_MTIME" in output:
+            passed += 1
+            print("[PASS] stale-mtime: 默认只提醒，不阻断")
+        else:
+            failures.append("stale-mtime")
+            print(f"[FAIL] stale-mtime: 期望退出 0 且出现 E_STALE_MTIME，实际退出 {code}")
+            print(output.rstrip())
+        code, output = run_checker(mtime_ledger, mtime_dir, ("--strict",))
+        if code != 0 and "E_STALE_MTIME" in output:
+            passed += 1
+            print("[PASS] stale-mtime-strict: --strict 下阻断")
+        else:
+            failures.append("stale-mtime-strict")
+            print(f"[FAIL] stale-mtime-strict: 期望非 0 且出现 E_STALE_MTIME，实际退出 {code}")
             print(output.rstrip())
 
         # 证据命令执行链三夹具：成功、非零退出、未登记命令。

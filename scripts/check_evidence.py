@@ -2962,7 +2962,9 @@ def check_v1_ledger(
                 # 本身就是覆盖缺口，不能靠状态栏写“通过”掩盖。
                 issues.extend(self_report_gap_issues(evidence, status, item_id, number))
 
-                # 旧证据不能复用：证据日期和文件 mtime 都不能早于 commit 日期。
+                # 旧证据不能复用：账本里写的证据日期早于 commit 日期就是错误。
+                # 文件 mtime 只作兜底提醒：克隆或检出会把 mtime 刷成当时，用时间判新旧
+                # 并不可靠；真正的新旧判据是证据身份表里的内容哈希。--strict 才升级为阻断。
                 # 同一天内不按小时卡，避免“上午产出证据、下午提交基线”的正常流程误报。
                 if commit_date is not None:
                     row_date: Optional[date] = None
@@ -2994,10 +2996,11 @@ def check_v1_ledger(
                         if file_date < commit_date:
                             issues.append(
                                 Issue(
-                                    "E_STALE",
+                                    "E_STALE_MTIME",
                                     f"证据文件 mtime {file_date} 早于 commit 日期 {commit_date}，"
-                                    f"不能复用旧证据：{evidence_path}",
+                                    f"内容哈希才是主判据；确认无误可忽略此提醒：{evidence_path}",
                                     number,
+                                    severity="error" if strict else "warning",
                                 )
                             )
 

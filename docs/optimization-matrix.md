@@ -22,7 +22,7 @@
 | 15 | 阻塞举证单结构化 | done | `templates/blocking-form.md`、`scripts/check_evidence.py`（`check_blocking_form`、`E_BLOCKING_FORM`） | `anti_examples.py` 的 `v2-empty-blocking-form` 报 `E_BLOCKING_FORM`；`examples/03-blocking/blocking-form.md` 通过 |
 | 16 | 发布风险与 PR 摘要 | done | `templates/07-acceptance.md`（发布风险段）、`scripts/verity.py report --kind pr` | `examples/05-release/07` 的发布风险表；`python3 scripts/verity.py report --ledger examples/05-release/07-验收回归清单.md --kind pr` |
 | 17 | 复盘与 F 类统计 | done | `templates/07-acceptance.md`（复盘表）、`scripts/verity.py metrics` | `examples/05-release/07` 的 F1–F6 表；`python3 scripts/verity.py metrics --dir .` |
-| 18 | 红队夹具 | done | `scripts/anti_examples.py`、`docs/reviews/anti-examples.md` | `python3 scripts/anti_examples.py`：55/55 按预期报错 |
+| 18 | 红队夹具 | done | `scripts/anti_examples.py`、`docs/reviews/anti-examples.md` | `python3 scripts/anti_examples.py`：57/57 按预期报错 |
 | 19 | 技能写作 | done | `SKILL.md`、`README.md`、`references/` | `python3 scripts/package.py --check`；SKILL/README 与模板/示例计数一致 |
 | 20 | 术语表与判级校准 | done | `references/evidence.md`、`scripts/check_evidence.py`（A/B+/B/C） | `examples/04`、`05` 证据等级均为 A；`check_evidence.py` 对非法等级报 `E_EVIDENCE_LEVEL` |
 | 21 | 版本迁移与 schema | done | `scripts/verity.py upgrade`、`VERSION`、`CHANGELOG.md` | `python3 scripts/verity.py upgrade --help`；八列账本被明确拒绝，schema_version 不是 2 时报 `E_SCHEMA` |

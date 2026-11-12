@@ -11,7 +11,7 @@
 - `scripts/check_evidence.py`：新增 `E_DEBT_IN_PASS`（通过 + 欠账非空）、`E_BLOCKING_IN_PASS`（通过 + 阻塞单仍 open 或状态不唯一）、`E_REVIEW_MISMATCH`（重复 AC、复核人等于产出者、EV 与 AC 不对应）、`E_ARTIFACT_STALE`（证据 HAP/commit 不是最终值）、`E_AUDIT_CONTRADICTION`（完成审计写通过却带失败描述）、`E_COMPLETION_MISSING`（任务卡 AC 未同时出现在验收行和完成审计）。
 - `blocking-form.md` 现在有唯一当前状态 `open` / `closed`；历史结论只能放在“历史记录”小节，当前状态与历史混写会被判红。
 - 适配层 `evidence_commands` 支持 `ac_ids`；`--run` 写入的 `ev-runs.log` 记录新增 `ac_id`、`ac_ids`、`hap_sha`，复核检查按 AC 和最终 HAP 绑定，防止拿 EV-03 搜索证据给 Ctrl+F 签字。
-- `scripts/anti_examples.py`：新增 5 个反例（通过+欠账、通过+阻塞 open、重复 AC 复核、通过+旧 HAP、通过+完成审计矛盾），夹具总数 55。
+- `scripts/anti_examples.py`：新增 5 个反例（通过+欠账、通过+阻塞 open、重复 AC 复核、通过+旧 HAP、通过+完成审计矛盾），夹具总数 57。
 - `scripts/selftest.py`：新增 5 个 v1/v2 自测，原有 5 个 legacy 样本保留，合计 10/10。
 - `references/acceptance.md`：补充上述六个错误码和“通过时欠账/阻塞必须为空”的硬规则。
 
@@ -23,6 +23,7 @@
 - `scripts/verity.py doctor`：文档计数断言里的反例数量从写死的 50 改到实际的 55，避免正确的文档被自己判成漂移。
 - `.github/workflows/ci.yml`：修复说明书逐字比对脚本的续行符转义，单反斜杠会被 Python 三引号折叠成空格，导致该断言恒失败。
 - `scripts/package.py`：打包预算拆成“产品载荷 / 工程资产”两套配额（当前产品 24 / 30、资料 36 / 45、合计 60 / 80），产品超限才失败，资料超软上限只提醒；自测按配额参数化，调整上限不必改自测。
+- `scripts/check_evidence.py`：证据文件 mtime 早于提交日期时改记为提醒（`E_STALE_MTIME`），内容哈希才是主判据，`--strict` 才阻断；新增两条时间判据反例。
 - `scripts/anti_examples.py`：伪造复核与日期归一不再按字面写死旧读数，改为按表格列结构和时间格式匹配，避免账号刷新后负向夹具静默变成正向通过。
 - 刷新三份 v1 验收档案：重新取证并绑定最终提交，补齐阻塞单唯一当前状态，修绿初始化自检与整套自动检查。
 
@@ -30,7 +31,7 @@
 
 - `python3 -m py_compile scripts/*.py`：通过。
 - `python3 scripts/selftest.py`：10/10 通过。
-- `python3 scripts/anti_examples.py`：55/55 夹具按预期。
+- `python3 scripts/anti_examples.py`：57/57 夹具按预期。
 - `python3 scripts/package.py --check`：60/60 文件，未放宽上限。
 
 ## [v1.3.1] - 2026-11-10
