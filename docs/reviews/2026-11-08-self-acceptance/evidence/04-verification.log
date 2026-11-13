@@ -25,6 +25,9 @@
 ## 3. 门禁自检
 
 - `python3 scripts/verity.py gate --selftest` → 范围锁、清单篡改、适配层版本等 8 条正负对照 `[PASS]`；其中 1 条预期 `[FAIL]` 由紧随的 `[PASS]` 确认被识别。
+- `python3 scripts/verity.py gate --root . --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run --team --release` → `结果：通过（6/6）`
+- `python3 scripts/verity.py gate --root . --ledger examples/04-project-v1/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run` → `结果：通过（5/5）`
+- `python3 scripts/verity.py gate --root . --ledger examples/05-release/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run` → `结果：通过（5/5）`
 
 ## 4. 证据命令执行记录
 
