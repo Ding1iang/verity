@@ -15,7 +15,7 @@
 | 4 | `python3 scripts/check_coverage.py --selftest` | `结果：11/11 通过` |
 | 5 | `bash tests/init-selftest.sh` | `结果：6/6 通过` |
 | 6 | `python3 scripts/check_reviewer.py --selftest` | `结果：3/3 通过` |
-| 7 | `python3 scripts/package.py --check` | `文件数：产品 25 / 30，资料 37 / 45，合计 62 / 80`；`总大小：产品 556.6 KB / 2.0 MB，资料 147.0 KB / 8.0 MB，合计 703.6 KB / 10.0 MB` |
+| 7 | `python3 scripts/package.py --check` | `文件数：产品 25 / 30，资料 37 / 45，合计 62 / 80`；`检查通过` |
 
 ## 2. 适配层预检
 
