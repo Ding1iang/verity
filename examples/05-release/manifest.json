@@ -1,11 +1,11 @@
 {
   "schema": "verity-manifest/v1",
-  "created_at": "2026-11-12",
-  "workspace_hash": "5b599a4e87bcea1e05377abf468098e1d93c16b5d7464f35ec12f62b9eadf90c",
+  "created_at": "2026-11-14",
+  "workspace_hash": "4e19a53e70f1318b768189e5465f08016fa54bf8dc36a92e87f5ed1ef5d4b09e",
   "files": [
     {
       "path": "examples/05-release/07-验收回归清单.md",
-      "sha256": "af4ed8671bd5effc10788f563b63e49fdc89a7ff8d0231bf6f8f058c061d4313",
+      "sha256": "0294d4005b946218a5846419f1e96a2ed6998b701bbfc4f9cfdc44ac953ab599",
       "bytes": 6314,
       "tracked": true,
       "source_command": "python3 scripts/check_evidence.py examples/05-release/07-验收回归清单.md"
@@ -26,7 +26,7 @@
     },
     {
       "path": "examples/05-release/evidence/ev-runs.log",
-      "sha256": "cb5e13e8bae62430ea986456075458a4151e38e55d1a99f9600eab444e957f68",
+      "sha256": "d7b1445a8b1034248b82dd0cd357d67a0da73a26b8840179969e8e1cb9932e77",
       "bytes": 555,
       "tracked": true,
       "source_command": "见 07 账本对应证据行的取证方式"

@@ -1,10 +1,10 @@
-# 任务卡：verity v1.3.4 自验收
+# 任务卡：verity v1.3.5 自验收
 
 ## 基本信息
 
 | 字段 | 内容 |
 |---|---|
-| 任务编号 | verity-self-acceptance-1.3.4 |
+| 任务编号 | verity-self-acceptance-1.3.5 |
 | 任务卡版本 | v2 |
 | schema_version | 2 |
 | 平台 | 本机 macOS；Python 3 标准库；git 工作区 |
@@ -38,14 +38,14 @@
 |---|---|
 | 问题 | 32 项优化分散在检查器、模板、文档和示例，缺少统一门禁与自证 |
 | 用户 | 使用 verity 的 AI 编码代理与独立复核者 |
-| 目标 | 把 32 项优化落到规则、模板、检查器、门禁、夹具、文档和自验收，形成 v1.3.0 |
+| 目标 | 把 32 项优化落到规则、模板、检查器、门禁、夹具、文档和自验收，形成 v1.3.5 |
 | 范围外 | 不实现清单“不抄”的整套技能包、强制 issue tracker、每任务 worktree、七节 spec、ZK/FHE、JSON-only 门禁、独立 goal-setter、rebar、Java/Spring 绑定、teach/prototype 清单 |
 | 关键决定 | v1 schema 2 十三列；十段必需结构；证据身份 SHA-256；独立复核逐 AC；gate 本地入口；分析文档不进发布包 |
 | 验收方向 | 以第 5 节验证命令、58 个反例、examples/04 与 05、init 自测和矩阵 32 行为准 |
 
 ## 目标
 
-把 verity 的 32 项工作流优化全部落地，并用 verity 自己的检查器和门禁完成一次自验收。
+把 verity 的 32 项工作流优化全部落地，并用 verity 自己的检查器和门禁完成一次自验收。本版把 R3 不变量判据写进规则与模板。
 
 ## 范围
 
@@ -103,12 +103,12 @@
 | AC-02 | 给定空目录运行 init，应生成 journey-01.md，且 07 与旅程卡都不预填“通过” | J-01 / 步骤 1 | A | 运行 init 自测并读生成文件 |
 | AC-03 | 给定 examples/04，带 `--adapter tests/fixtures/valid-adapter.json --run` 的 gate 应 5/5 通过；给定 examples/05，gate 应 5/5 通过；给定坏提交，anti-bypass 应报红 | J-01 / 步骤 3 | A | 运行 gate --selftest 与两次 gate |
 | AC-04 | 运行 manifest --write 后再 --check，核对输出应报告 7 个文件且 SHA-256 一致 | J-01 / 步骤 2 | A | 运行 manifest --write / --check |
-| AC-05 | 运行第 5 节列出的 11 条验证命令，应返回退出码 0；selftest 12/12、anti 58/58、coverage 11/11 与读数一致 | J-01 / 步骤 3 | A | 运行 verify 命令并保存日志 |
-| AC-06 | 检查 SKILL/README/references/templates/scripts，版本 1.3.4、schema 2 十三列、六模板、四条硬规则、58 类反例应一致 | J-01 / 步骤 3 | A | grep 计数与 package --check |
+| AC-05 | 运行任务书第 3 节列出的 10 条命令，应返回退出码 0；selftest 12/12、anti 58/58、coverage 11/11 与读数一致 | J-01 / 步骤 3 | A | 运行 verify 命令并保存日志 |
+| AC-06 | 检查 SKILL/README/references/templates/scripts，版本 1.3.5、schema 2 十三列、六模板、四条硬规则、58 类反例应一致 | J-01 / 步骤 3 | A | grep 计数与 package --check |
 | AC-07 | 运行 `check_reviewer.py --selftest`，应返回退出码 0；给定伪造复核人 id 应返回退出码 1；gate 不带 `--verify-reviewer` 时步骤数不变 | J-01 / 步骤 3 | A | 运行 check_reviewer --selftest 与 gate |
 | AC-08 | 检查 `references/acceptance.md` §8.1/§8.4/§8.7 与 `SKILL.md`，grep 输出应包含准备批优先、输入通道正对照、复核会话核验 3 处规则 | J-01 / 步骤 1 | A | grep 规则原文 |
 | AC-09 | 运行 check_evidence 检查读数只写“ok”的反例账本，应返回退出码 1 且命中 `E_READING_MISSING`；五个示例账本应返回退出码 0 | J-01 / 步骤 2 | A | 运行 anti_examples 与 check_evidence |
-| AC-10 | 运行 VERSION 与 manifest --check，应为 1.3.4，且自验收与示例账本的 workspace_hash、SHA-256 与最终提交一致 | J-01 / 步骤 3 | A | 运行 manifest --check 与 gate |
+| AC-10 | 运行 VERSION 与 manifest --check，应为 1.3.5，且自验收与示例账本的 workspace_hash、SHA-256 与最终提交一致 | J-01 / 步骤 3 | A | 运行 manifest --check 与 gate |
 
 ## 覆盖总表对齐
 
@@ -122,7 +122,7 @@
 
 ## 交付物
 
-- v1.3.0 规则、模板、脚本、示例与矩阵。
+- v1.3.5 规则、模板、脚本、示例与矩阵。
 - 本目录 07、证据日志、manifest 与复核记录。
 
 ## 变更记录
@@ -130,6 +130,7 @@
 | 版本 | 日期 | 改了什么 | 作废哪些旧证据 |
 |---|---|---|---|
 | v2 | 2026-11-08 | 立卡并锁定 32 项范围 | 无 |
+| v2 | 2026-11-14 | 版本锚点、AC-05/06/10 读数刷新到 1.3.5 | 旧版本读数与指纹作废 |
 
 ## 交付前自检
 

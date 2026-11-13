@@ -1,7 +1,7 @@
-# verity v1.3.4 自验收验证日志
+# verity v1.3.5 自验收验证日志
 
-- 生成日期：2026-11-12
-- 代码 HEAD：9d4a1da09374d08162bd058334c985d4ba0d6640（最终实现提交；此后仅允许记录性改动）
+- 生成日期：2026-11-14
+- 代码 HEAD：596e269498be690c281bff7f81bce18d927e328d（最终实现提交；此后仅允许记录性改动）
 - 环境：macOS / Python 3 标准库（本机 3.9.6 / 3.12.14 / 3.13.1 均实跑）
 - 执行者：builder
 
@@ -15,7 +15,7 @@
 | 4 | `python3 scripts/check_coverage.py --selftest` | `结果：11/11 通过` |
 | 5 | `bash tests/init-selftest.sh` | `结果：6/6 通过` |
 | 6 | `python3 scripts/check_reviewer.py --selftest` | `结果：3/3 通过` |
-| 7 | `python3 scripts/package.py --check` | `产品 25 / 30，资料 37 / 45，合计 62 / 80`，699.6 KB |
+| 7 | `python3 scripts/package.py --check` | `文件数：产品 25 / 30，资料 37 / 45，合计 62 / 80`；`总大小：产品 556.6 KB / 2.0 MB，资料 147.0 KB / 8.0 MB，合计 703.6 KB / 10.0 MB` |
 
 ## 2. 适配层预检
 
@@ -24,15 +24,22 @@
 
 ## 3. 门禁自检
 
-- `python3 scripts/verity.py gate --selftest` → 范围锁、清单篡改、适配层版本等正负对照全部 `[PASS]`。
-- `python3 scripts/verity.py gate --root . --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run --team --release` → `结果：通过（6/6）`。
-- `python3 scripts/verity.py gate --root . --ledger examples/04-project-v1/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run` → `结果：通过（5/5）`。
-- `python3 scripts/verity.py gate --root . --ledger examples/05-release/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run` → `结果：通过（5/5）`。
+- `python3 scripts/verity.py gate --selftest` → 范围锁、清单篡改、适配层版本等 8 条正负对照 `[PASS]`；其中 1 条预期 `[FAIL]` 由紧随的 `[PASS]` 确认被识别。
 
 ## 4. 证据命令执行记录
 
-`--run` 在干净工作树执行 EV-01（`python3 scripts/selftest.py`），退出 0，输出摘要 `结果：12/12 通过`，记录写入 `evidence/ev-runs.log`。
+`--run` 在干净工作树执行 EV-01（`python3 scripts/selftest.py`），执行时间 `2026-11-14T01:50:01`，退出 0，输出摘要 `结果：12/12 通过`，记录写入 `evidence/ev-runs.log`。
 
-## 5. 说明
+## 5. 示例账本检查
+
+| 账本 | 结果 |
+|---|---|
+| `examples/01-new-feature/07-验收回归清单.md` | exit 0，3 行，结论=通过（通过 3） |
+| `examples/02-bug-fix/07-验收回归清单.md` | exit 0，4 行，结论=通过（通过 4） |
+| `examples/03-blocking/07-验收回归清单.md` | exit 0，4 行，结论=阻塞（通过 2 / 阻塞 1 / 不适用 1） |
+| `examples/04-project-v1/07-验收回归清单.md` | exit 0，1 行，结论=通过（通过 1）；1 项 mtime 警告，内容哈希一致 |
+| `examples/05-release/07-验收回归清单.md` | exit 0，5 行，结论=通过（通过 5）；5 项 mtime 警告，内容哈希一致 |
+
+## 6. 说明
 
 本日志记录 verity 自身的验证读数，不含示例项目数据。示例账本 `examples/04-project-v1` 与 `examples/05-release` 的证据文件各自独立。
