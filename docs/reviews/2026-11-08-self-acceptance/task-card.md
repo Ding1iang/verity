@@ -41,7 +41,7 @@
 | 目标 | 把 32 项优化落到规则、模板、检查器、门禁、夹具、文档和自验收，形成 v1.3.5 |
 | 范围外 | 不实现清单“不抄”的整套技能包、强制 issue tracker、每任务 worktree、七节 spec、ZK/FHE、JSON-only 门禁、独立 goal-setter、rebar、Java/Spring 绑定、teach/prototype 清单 |
 | 关键决定 | v1 schema 2 十三列；十段必需结构；证据身份 SHA-256；独立复核逐 AC；gate 本地入口；分析文档不进发布包 |
-| 验收方向 | 以第 5 节验证命令、58 个反例、examples/04 与 05、init 自测和矩阵 32 行为准 |
+| 验收方向 | 以任务书第 3 节验证命令、58 个反例、examples/04 与 05、init 自测和矩阵 32 行为准 |
 
 ## 目标
 

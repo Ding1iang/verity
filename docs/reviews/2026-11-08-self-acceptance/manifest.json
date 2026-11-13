@@ -1,19 +1,19 @@
 {
   "schema": "verity-manifest/v1",
   "created_at": "2026-11-14",
-  "workspace_hash": "870e0f7f8075c1e59157fe86dc7c42f733adbdccd61b65807d042b875f860556",
+  "workspace_hash": "7d2ae4d7c12bbbaab974dfb0b26c39becfca989bd39ac5aa2ef7613fd8ae3db3",
   "files": [
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md",
-      "sha256": "901c86d4c0308a0485c632324174d4a581ad0431446b78cbe4233ce000d4b14a",
-      "bytes": 9598,
+      "sha256": "b728f325561dcf8b43d29710a4b7024e44bcd11cc97410042e3c3e68f3e5d650",
+      "bytes": 9616,
       "tracked": true,
       "source_command": "python3 scripts/check_evidence.py docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md"
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/README.md",
-      "sha256": "e270f3035b92d6a43d666694de1711a9918fa569ace5392f7dbea0717682b2da",
-      "bytes": 1968,
+      "sha256": "cc766429cc1cabf98e854302244bc82a73beea36ed2493b63e962fcd8180107c",
+      "bytes": 1977,
       "tracked": true,
       "source_command": "批次骨架/记录文件"
     },
@@ -47,8 +47,8 @@
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/task-card.md",
-      "sha256": "d80c7078d9f6e9b9e70120df2f13636cfc0294f02de7250e56980e8aa9d0df3b",
-      "bytes": 7203,
+      "sha256": "00c79f6fbd58f0d8ce75621e8c92cdecb3502a2d1f2f89ebb59569d144990846",
+      "bytes": 7212,
       "tracked": true,
       "source_command": "批次骨架/记录文件"
     }
