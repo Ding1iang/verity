@@ -1263,6 +1263,21 @@ def check_task_card(
     if not acs:
         issues.append(Issue("E_TASKCARD", "任务卡没有可解析的“验收项表”或 AC 清单", None))
 
+    # 检查规则段是 v1.4 的可选段：只对已经写了的卡做软提示，不阻断旧任务卡。
+    rule_section = find_section(sections, "检查规则")
+    if rule_section is not None:
+        rule_body = "\n".join(rule_section[2])
+        missing_rules = [rule for rule in ("E1", "R1", "R2", "R3") if rule not in rule_body]
+        if missing_rules:
+            issues.append(
+                Issue(
+                    "W_RULE_SELECTION",
+                    f"任务卡有“检查规则”段但缺少 {', '.join(missing_rules)} 行；请按改动面补启用/不适用及理由",
+                    rule_section[1],
+                    severity="warning",
+                )
+            )
+
     lane = ""
     risk = ""
     complexity = ""

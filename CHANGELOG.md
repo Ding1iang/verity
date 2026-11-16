@@ -9,6 +9,7 @@
 - `references/acceptance.md` §1.3–§1.5：E1 入口清单/边界/命名三项检查；R1 的 C2+C4 固定组合（空态加 C1）；R2 的输入方式与纯键盘/鼠标 AC 要求。
 - `templates/task-card.md`：新增“检查规则（按改动面选择）”表，要求逐批写启用/不适用及理由。
 - `templates/07-acceptance.md`：预期列说明补充 E1/R1/R2 的读数要求。
+- `scripts/check_evidence.py`：任务卡已有“检查规则”段但缺少 E1/R1/R2/R3 行时给 `W_RULE_SELECTION` 软提示，不阻断旧任务卡。
 
 ### 变更
 
@@ -23,7 +24,7 @@
 - `bash tests/init-selftest.sh`：6/6 通过。
 - `python3 scripts/check_coverage.py --selftest`：11/11 通过。
 - 五个示例账本 `check_evidence.py` 全部 exit 0。
-- `python3 scripts/package.py --check`：产品 25 / 30，资料 37 / 45，合计 62 / 80，708.9 KB；检查通过。
+- `python3 scripts/package.py --check`：产品 25 / 30，资料 37 / 45，合计 62 / 80，约 710 KB；检查通过。
 
 本文件记录 verity 的对外变更。版本号遵循语义化版本（`MAJOR.MINOR.PATCH`），格式参考 Keep a Changelog。
 
