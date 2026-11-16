@@ -23,7 +23,7 @@
 - `bash tests/init-selftest.sh`：6/6 通过。
 - `python3 scripts/check_coverage.py --selftest`：11/11 通过。
 - 五个示例账本 `check_evidence.py` 全部 exit 0。
-- `python3 scripts/package.py --check`：产品 25 / 30，资料 37 / 45，合计 62 / 80，708.6 KB；检查通过。
+- `python3 scripts/package.py --check`：产品 25 / 30，资料 37 / 45，合计 62 / 80，708.9 KB；检查通过。
 
 本文件记录 verity 的对外变更。版本号遵循语义化版本（`MAJOR.MINOR.PATCH`），格式参考 Keep a Changelog。
 
