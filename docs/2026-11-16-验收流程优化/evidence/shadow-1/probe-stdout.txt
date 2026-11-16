@@ -1,0 +1,23 @@
+{
+  "E01": {
+    "empty_text": "True",
+    "clear_enabled": "false",
+    "pass": true,
+    "click_blocked": "true"
+  },
+  "V04": {
+    "overflow_px": "0",
+    "pass": true
+  },
+  "V05": {
+    "overlap_px": "0",
+    "pass": true,
+    "settings_opened": "true"
+  },
+  "N03": {
+    "toast": "已移入回收站",
+    "undo": "已移入回收站：「{0}」",
+    "pass": true
+  },
+  "exit": 0
+}

@@ -1,0 +1,7 @@
+E01_empty_text=True
+E01_clear_enabled=false
+E01_clear_x=1183
+E01_clear_y=577
+V05_overlap_px=0
+V05_settings_x=769
+V05_settings_y=1652
