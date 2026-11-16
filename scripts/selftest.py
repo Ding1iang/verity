@@ -20,6 +20,7 @@ import tempfile
 
 import anti_examples
 import check_reviewer
+import verity
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -145,6 +146,35 @@ def run_checker(case_dir: Path) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         check=False,
     )
+
+
+def check_scope_parser() -> tuple[bool, str]:
+    """回归：范围锁一格写多个路径时必须拆开，否则真实改动会被误判越界。"""
+    card = """## 范围锁
+
+| 类型 | 路径 |
+|---|---|
+| 做 | `examples/05-release/`、VERSION、CHANGELOG.md |
+| 不做 | docs/、dist/ |
+"""
+    do_paths, dont_paths = verity.parse_scope_lock(card)
+    expected_do = ["examples/05-release/", "VERSION", "CHANGELOG.md"]
+    expected_dont = ["docs/", "dist/"]
+    matched = verity._scope_match("examples/05-release/manifest.json", "examples/05-release/")
+    placeholder = """## 范围锁
+
+| 类型 | 路径 |
+|---|---|
+| 做 | <src/...、tests/...、docs/...> |
+"""
+    placeholder_paths, _ = verity.parse_scope_lock(placeholder)
+    ok = (
+        do_paths == expected_do
+        and dont_paths == expected_dont
+        and matched
+        and placeholder_paths == []
+    )
+    return ok, f"做={do_paths}，不做={dont_paths}，目录前缀匹配={matched}，占位符={placeholder_paths}"
 
 
 def make_v1_cases(root: Path) -> list[tuple[str, Path, str]]:
@@ -381,6 +411,14 @@ def main() -> int:
                     print(f"       {line}")
 
         total = len(cases) + len(v1_cases) + len(reviewer_cases)
+        scope_ok, scope_detail = check_scope_parser()
+        total += 1
+        if scope_ok:
+            passed += 1
+            print(f"[PASS] scope-multi-path：{scope_detail}")
+        else:
+            failures.append("scope-multi-path")
+            print(f"[FAIL] scope-multi-path：{scope_detail}")
         print(f"结果：{passed}/{total} 通过")
     if failures:
         print("未通过的样本：" + "、".join(failures), file=sys.stderr)

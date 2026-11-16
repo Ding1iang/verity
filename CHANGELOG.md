@@ -1,5 +1,29 @@
 # 更新日志
 
+## [v1.4.1] - 2026-11-16
+
+修范围锁多路径解析与示例证据包清单过期：一格写多个路径不再误判越界，两个示例门禁恢复 5/5。
+
+### 新增
+
+- `scripts/selftest.py`：新增范围锁多路径回归，一格写多个路径必须拆成独立路径；自测 12 项增至 13 项。
+- `scripts/verity.py`、`scripts/check_evidence.py`：新增 `split_scope_paths`，按中文顿号、中英文逗号、分号和换行拆分范围锁单元格。
+
+### 变更
+
+- `templates/task-card.md`：范围锁说明补“一格写多个路径用顿号分隔”，与检查器行为对齐。
+- `examples/04-project-v1`、`examples/05-release`：按当前工作区回填证据身份并重新生成 `manifest.json`，修复按 README 命令复跑只有 4/5 的旧清单。
+- 版本号 1.4.0 → 1.4.1。
+
+### 验证
+
+- `python3 scripts/selftest.py`：13/13 通过。
+- `python3 scripts/anti_examples.py`：58/58 夹具按预期。
+- `bash tests/init-selftest.sh`：6/6 通过。
+- `python3 scripts/check_coverage.py --selftest`：11/11 通过。
+- `examples/04-project-v1`、`examples/05-release` 的 `verity.py gate ... --run`：各 5/5 通过。
+- `python3 scripts/package.py --check`：产品 25 / 30，资料 37 / 45，合计 62 / 80。
+
 ## [v1.4.0] - 2026-11-16
 
 把 E1 入口与视觉、R1 形态×数据、R2 键鼠路径写进规则与任务卡模板，作为影子规则启用；硬拦截留到连续两批复盘后再加。

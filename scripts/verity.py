@@ -829,6 +829,32 @@ def clean_checkout_check(root: Path, ledger: Path) -> int:
         return check_manifest(clean_root, clean_ledger, strict=True)
 
 
+# 范围锁单元格内允许一次写多个路径；模板用中文顿号分隔，用户也可能用
+# 中英文逗号或分号。只按这些分隔符拆，不按空格拆，避免把带空格的路径拆坏。
+SCOPE_PATH_SEPARATOR_RE = re.compile(r"[、,，;；\n]+")
+
+
+def split_scope_paths(value: str) -> list[str]:
+    """把一个范围锁单元格拆成路径列表，丢弃空白和模板占位符。
+
+    模板 `templates/task-card.md` 允许在一格里写多个路径（如
+    `src/...、tests/...`）。若整格当成一个路径，真实改动会匹配不上，
+    范围锁会把正常改动误判为越界。这里按分隔符拆开，并去掉每个路径
+    两端的反引号和空白；以 `<` 开头的模板占位符不参与匹配。
+    """
+    cleaned = value.strip().strip("`").strip()
+    # 整格都是模板占位符时直接丢弃；否则 `<a、b、c>` 拆开后，后面几段
+    # 不以 `<` 开头，会被误当成真实路径。
+    if not cleaned or cleaned.startswith("<"):
+        return []
+    paths: list[str] = []
+    for part in SCOPE_PATH_SEPARATOR_RE.split(cleaned):
+        path = part.strip().strip("`").strip()
+        if path and not path.startswith("<"):
+            paths.append(path)
+    return paths
+
+
 def parse_scope_lock(task_text: str) -> tuple[list[str], list[str]]:
     """读取任务卡“范围锁”：返回 (做, 不做) 的路径/通配列表。"""
     sections = split_sections(task_text)
@@ -848,13 +874,12 @@ def parse_scope_lock(task_text: str) -> tuple[list[str], list[str]]:
     dont_paths: list[str] = []
     for _, row in rows:
         kind = row[type_index].strip() if type_index < len(row) else ""
-        path = row[path_index].strip().strip("`") if path_index < len(row) else ""
-        if not path or path.startswith("<"):
-            continue
-        if "不做" in kind:
-            dont_paths.append(path)
-        elif "做" in kind:
-            do_paths.append(path)
+        path = row[path_index].strip() if path_index < len(row) else ""
+        for item in split_scope_paths(path):
+            if "不做" in kind:
+                dont_paths.append(item)
+            elif "做" in kind:
+                do_paths.append(item)
     return do_paths, dont_paths
 
 
@@ -1302,13 +1327,18 @@ def gate_selftest() -> int:
         card = batch / "task-card.md"
         card_text = (
             "# 范围锁夹具\n\n## 范围锁\n\n"
-            "| 类型 | 路径 |\n|---|---|\n| 做 | src/ |\n| 做 | batch/ |\n| 不做 | secrets/ |\n"
+            "| 类型 | 路径 |\n|---|---|\n| 做 | src/、batch/ |\n| 不做 | secrets/ |\n"
         )
         card.write_text(card_text, encoding="utf-8")
         ledger = batch / "07-验收回归清单.md"
         ledger.write_text("# 夹具\n", encoding="utf-8")
         subprocess.run(["git", "add", "-A"], cwd=root, check=False)
         subprocess.run(["git", "commit", "-qm", "scope-base"], cwd=root, check=False)
+        (root / "src" / "app.py").write_text("value = 2\n", encoding="utf-8")
+        scope_allowed = check_scope(root, ledger)
+        allowed_ok = not scope_allowed
+        print(f"[{'PASS' if allowed_ok else 'FAIL'}] 正对照：一格多路径声明的改动不被误判越界")
+        subprocess.run(["git", "checkout", "--", "src/app.py"], cwd=root, check=False)
         (root / "scope-probe.txt").write_text("probe\n", encoding="utf-8")
         scope_untracked = check_scope(root, ledger)
         untracked_ok = any("未在范围锁" in issue and "scope-probe.txt" in issue for issue in scope_untracked)

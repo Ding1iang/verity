@@ -1192,6 +1192,31 @@ def parse_ac_ids(value: str) -> list[str]:
     return re.findall(r"AC-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*", value)
 
 
+# 范围锁单元格允许一次写多个路径；模板用中文顿号分隔，用户也可能用中英文
+# 逗号或分号。只按这些分隔符拆，不按空格拆，避免把带空格的路径拆坏。
+SCOPE_PATH_SEPARATOR_RE = re.compile(r"[、,，;；\n]+")
+
+
+def split_scope_paths(value: str) -> list[str]:
+    """把一个范围锁单元格拆成路径列表，丢弃空白和模板占位符。
+
+    模板 `templates/task-card.md` 允许在一格里写多个路径；整格当成一个
+    路径会让后续的范围判断拿不到真实目录。这里按分隔符拆开，去掉每个
+    路径两端的反引号和空白；以 `<` 开头的模板占位符不参与匹配。
+    """
+    cleaned = value.strip().strip("`").strip()
+    # 整格都是模板占位符时直接丢弃；否则 `<a、b、c>` 拆开后，后面几段
+    # 不以 `<` 开头，会被误当成真实路径。
+    if not cleaned or cleaned.startswith("<"):
+        return []
+    paths: list[str] = []
+    for part in SCOPE_PATH_SEPARATOR_RE.split(cleaned):
+        path = part.strip().strip("`").strip()
+        if path and not path.startswith("<"):
+            paths.append(path)
+    return paths
+
+
 def read_scope_lock(task_text: str) -> tuple[list[str], list[str]]:
     """读取任务卡范围锁，返回 (做, 不做) 路径列表。"""
     sections = split_sections(task_text)
@@ -1212,12 +1237,11 @@ def read_scope_lock(task_text: str) -> tuple[list[str], list[str]]:
     for _, row in rows:
         kind = cell(row, type_index).strip()
         value = cell(row, path_index).strip()
-        if not value or value.startswith("<"):
-            continue
-        if kind in {"做", "允许", "范围"}:
-            allow.append(value)
-        elif kind in {"不做", "禁止", "范围外"}:
-            deny.append(value)
+        for item in split_scope_paths(value):
+            if kind in {"做", "允许", "范围"}:
+                allow.append(item)
+            elif kind in {"不做", "禁止", "范围外"}:
+                deny.append(item)
     return allow, deny
 
 
