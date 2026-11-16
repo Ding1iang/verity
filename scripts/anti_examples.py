@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""生成并运行 58 类反例，逐条断言检查器报出指定错误码。
+"""生成并运行 59 类反例，逐条断言检查器报出指定错误码。
 
 这个脚本是给 verifier 用的“反例预备清单”执行器：所有样本在临时目录里
 即时生成，不依赖仓库里的示例文件，也不写入用户数据。每个样本都故意只
@@ -1020,6 +1020,19 @@ def main() -> int:
             else:
                 failures.append(name)
                 print(f"[FAIL] {name}: issues={count} {detail}")
+
+    # 纯函数级回归：CI 工作流属于基础设施，不应让技能证据失效。
+    total += 1
+    workflow_changes = module.stale_implementation_changes(
+        [".github/workflows/ci.yml", "scripts/a.py"], ""
+    )
+    workflow_ok = workflow_changes == ["scripts/a.py"]
+    if workflow_ok:
+        passed += 1
+        print("[PASS] github-workflow-not-evidence: CI 配置变更不判旧证据")
+    else:
+        failures.append("github-workflow-not-evidence")
+        print(f"[FAIL] github-workflow-not-evidence: {workflow_changes}")
 
     # 纯函数级回归：monorepo 里项目前缀必须被剥掉，否则范围锁与旧证据检测静默失效。
     prefixed = module.stale_implementation_changes(["app/scripts/marker.py"], "app/")

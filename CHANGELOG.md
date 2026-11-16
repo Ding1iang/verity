@@ -1,5 +1,29 @@
 # 更新日志
 
+## [v1.4.3] - 2026-11-16
+
+修 CI 配置变更误伤示例证据：GitHub Actions 工作流和 Dependabot 配置文件不再计入实现变更，不改技能证据的适用范围。
+
+### 新增
+
+- `scripts/anti_examples.py`：新增 CI 工作流变更的纯函数回归；反例总数 58 → 59。
+
+### 变更
+
+- `scripts/check_evidence.py`：`.github/` 从实现变更前缀移到记录类前缀，工作流变更不再触发示例账本的 `E_STALE_EVIDENCE` 和工作区指纹失效。
+- 版本号 1.4.2 → 1.4.3。
+
+### 验证
+
+- `python3 scripts/selftest.py`：13/13 通过。
+- `python3 scripts/anti_examples.py`：59/59 夹具按预期。
+- `bash tests/init-selftest.sh`：6/6 通过。
+- `python3 scripts/check_coverage.py --selftest`：11/11 通过。
+- 五个示例账本 `check_evidence.py`：全部 exit 0。
+- `examples/04-project-v1`、`examples/05-release` 的 `verity.py gate ... --run`：各 5/5 通过。
+- `python3 scripts/verity.py gate --selftest`：正负对照全过。
+- `python3 scripts/package.py --check`：产品 25 / 30，资料 37 / 45，合计 62 / 80。
+
 ## [v1.4.2] - 2026-11-16
 
 开源准备：公开安装口径、CI 门禁、社区协作与供应链固定项一次补齐；规则和检查器行为不变。

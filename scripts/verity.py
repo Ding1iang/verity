@@ -1161,9 +1161,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if matrix.is_file():
         # 这些数字是 verity 自身文档的实测读数；夹具数量升级时必须同步，否则 doctor 会把正确文档判成漂移。
         expected_counts = {
-            root / "README.md": ("58 个反例", "合计 62 / 80"),
-            root / "CHANGELOG.md": ("58/58", "62 / 80"),
-            matrix: ("58/58",),
+            root / "README.md": ("59 个反例", "合计 62 / 80"),
+            root / "CHANGELOG.md": ("59/59", "62 / 80"),
+            matrix: ("59/59",),
         }
         missing_counts: list[str] = []
         for file, needles in expected_counts.items():

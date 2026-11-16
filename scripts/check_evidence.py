@@ -249,7 +249,6 @@ IMPLEMENTATION_CHANGE_PREFIXES = (
     "templates/",
     "references/",
     "tests/",
-    ".github/",
 )
 IMPLEMENTATION_CHANGE_FILES = {"SKILL.md", "README.md", "VERSION"}
 
@@ -639,7 +638,7 @@ def has_readable_image(evidence: str, root: Path, ledger_dir: Path) -> bool:
 # 记录类目录：文档、验收账本、测试材料都属于“记录”，不是受控实现。
 # 账本和证据会在取证后继续补写，把它们算进工作区指纹等于“一写账本就
 # 作废自己的证据”，因此一律排除。受控实现变化才让旧证据失效。
-RECORD_DIR_PREFIXES = ("docs/", "acceptance/", "dist/")
+RECORD_DIR_PREFIXES = ("docs/", "acceptance/", "dist/", ".github/")
 
 
 def _is_record_path(relative: str, excluded: Optional[str]) -> bool:
