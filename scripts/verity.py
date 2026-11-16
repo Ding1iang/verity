@@ -747,8 +747,15 @@ def write_manifest(root: Path, ledger: Path) -> int:
     return 0
 
 
-def check_manifest(root: Path, ledger: Path, strict: bool) -> int:
-    """校验清单与磁盘一致；strict 时未跟踪文件也算失败。"""
+def check_manifest(
+    root: Path, ledger: Path, strict: bool, tracked_root: Optional[Path] = None
+) -> int:
+    """校验清单与磁盘一致；strict 时未跟踪文件也算失败。
+
+    `tracked_root` 用于干净检出：git archive 导出的目录没有 .git，
+    不能直接在导出目录里跑 git ls-files，否则所有文件都会被误判成
+    未跟踪。传入原仓库根目录，按仓库里的跟踪状态校验导出内容。
+    """
     target = ledger.parent / "manifest.json"
     if not target.is_file():
         print(f"[FAIL] 缺少证据包清单：{target}", file=sys.stderr)
@@ -760,6 +767,7 @@ def check_manifest(root: Path, ledger: Path, strict: bool) -> int:
         return 1
     issues: list[str] = []
     listed: set[str] = set()
+    tracked_base = tracked_root or root
     for item in manifest.get("files", []):
         relative = str(item.get("path", ""))
         path = root / relative
@@ -771,7 +779,7 @@ def check_manifest(root: Path, ledger: Path, strict: bool) -> int:
             issues.append(f"SHA-256 对不上：{relative}")
         if path.stat().st_size != item.get("bytes"):
             issues.append(f"字节数对不上：{relative}")
-        tracked_now = is_git_tracked(root, path)
+        tracked_now = is_git_tracked(tracked_base, tracked_base / relative)
         if strict and not tracked_now:
             issues.append(f"证据未被 git 跟踪，干净检出拿不到：{relative}")
         if item.get("tracked") is True and not tracked_now:
@@ -826,7 +834,7 @@ def clean_checkout_check(root: Path, ledger: Path) -> int:
         if not clean_ledger.is_file():
             print(f"[FAIL] 干净检出里没有账本：{relative}", file=sys.stderr)
             return 1
-        return check_manifest(clean_root, clean_ledger, strict=True)
+        return check_manifest(clean_root, clean_ledger, strict=True, tracked_root=root)
 
 
 # 范围锁单元格内允许一次写多个路径；模板用中文顿号分隔，用户也可能用
@@ -1377,6 +1385,14 @@ def gate_selftest() -> int:
         manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
         clean_manifest_ok = check_manifest(root, package_ledger, strict=False) == 0
         print(f"[{'PASS' if clean_manifest_ok else 'FAIL'}] 正对照：未篡改的清单可通过")
+        # 干净检出：git archive 里没有 .git，tracked 状态必须回原仓库查。
+        subprocess.run(["git", "add", "-A"], cwd=root, check=False)
+        subprocess.run(["git", "commit", "-qm", "package"], cwd=root, check=False)
+        write_manifest(root, package_ledger)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=False)
+        subprocess.run(["git", "commit", "-qm", "package-manifest"], cwd=root, check=False)
+        clean_checkout_ok = clean_checkout_check(root, package_ledger) == 0
+        print(f"[{'PASS' if clean_checkout_ok else 'FAIL'}] 正对照：干净检出里的清单可通过")
 
         # 适配层版本范围：过新的 schema_version 必须被拒绝。
         adapter_path = root / "bad-adapter.json"
@@ -1390,7 +1406,7 @@ def gate_selftest() -> int:
         except ValueError:
             adapter_version_ok = True
         print(f"[{'PASS' if adapter_version_ok else 'FAIL'}] 负对照：过新的 adapter.schema_version 被拒绝")
-        return 0 if all([negative_ok, positive_ok, untracked_ok, outside_ok, exception_ok, forged_manifest_ok, clean_manifest_ok, adapter_version_ok]) else 1
+        return 0 if all([negative_ok, positive_ok, untracked_ok, outside_ok, exception_ok, forged_manifest_ok, clean_manifest_ok, clean_checkout_ok, adapter_version_ok]) else 1
 
 
 def _parse_table_values(rows, header):
