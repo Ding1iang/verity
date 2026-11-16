@@ -13,7 +13,7 @@
 ### 变更
 
 - `.github/workflows/ci.yml`：完成线不再 gate 历史自验收账本，改为 gate 示例四、五；第三方 Action 固定到提交哈希（checkout v4.4.0、setup-python v5.6.0、lychee v2.9.0）。
-- `README.md`：安装从“私有仓库、向管理员索取”改为公开克隆地址；pre-push 示例改用示例四账本；开源维护口径同步。
+- `README.md`：安装从“私有仓库、向管理员索取”改为公开克隆地址；pre-push 示例改用示例四账本；说明压缩包只用于安装/阅读，完整复验走克隆；开源维护口径同步。
 - `SECURITY.md`：支持范围从 v1.0.x 更新到 v1.4.x。
 - `CONTRIBUTING.md`：改为社区协作口径，补 PR 流程。
 - `docs/design.md`：区分“不进技能包和公开示例”与开发档案；移除“公开前保持私有”的旧表述。

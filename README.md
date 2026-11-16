@@ -20,7 +20,7 @@ verity 用任务卡先定靶，用证据分级判断结论能不能成立。v1 �
 
 三种用法，任选一种：
 
-1. **压缩包**：在仓库根目录执行 `python3 scripts/package.py --zip` 生成 `dist/verity.zip`（压缩包不提交到仓库，需要时重新生成），解压后进入 `verity/` 目录。
+1. **压缩包**：在仓库根目录执行 `python3 scripts/package.py --zip` 生成 `dist/verity.zip`（压缩包不提交到仓库，需要时重新生成），解压后进入 `verity/` 目录。压缩包没有 git 提交信息，适合安装和阅读；完整复验和示例四、五请用下面的克隆方式。
 2. **公开仓库**：`git clone https://github.com/Ding1iang/verity.git verity`，进入 `verity/`。
 3. **作为 AI 客户端技能**：把整个目录放进客户端约定的技能目录（例如 `~/.claude/skills/verity/`），入口是根目录的 `SKILL.md`。客户端不支持技能目录时，让代理先读 `SKILL.md` 即可。
 
