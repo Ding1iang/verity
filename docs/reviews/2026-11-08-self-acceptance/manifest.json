@@ -1,7 +1,7 @@
 {
   "schema": "verity-manifest/v1",
-  "created_at": "2026-11-14",
-  "workspace_hash": "7d2ae4d7c12bbbaab974dfb0b26c39becfca989bd39ac5aa2ef7613fd8ae3db3",
+  "created_at": "2026-11-16",
+  "workspace_hash": "4477fb2e3a59e5d089f1d6c2da7cfc24639cd6a06c1fc5795c81de656a49ac6c",
   "files": [
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md",
@@ -12,8 +12,8 @@
     },
     {
       "path": "docs/reviews/2026-11-08-self-acceptance/README.md",
-      "sha256": "cc766429cc1cabf98e854302244bc82a73beea36ed2493b63e962fcd8180107c",
-      "bytes": 1977,
+      "sha256": "104f4146635bdbca9311997034a422a57cb8ec3668c341f3cdc11854e2fd71ef",
+      "bytes": 2166,
       "tracked": true,
       "source_command": "批次骨架/记录文件"
     },
