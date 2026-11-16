@@ -1,5 +1,30 @@
 # 更新日志
 
+## [v1.4.0] - 2026-11-16
+
+把 E1 入口与视觉、R1 形态×数据、R2 键鼠路径写进规则与任务卡模板，作为影子规则启用；硬拦截留到连续两批复盘后再加。
+
+### 新增
+
+- `references/acceptance.md` §1.3–§1.5：E1 入口清单/边界/命名三项检查；R1 的 C2+C4 固定组合（空态加 C1）；R2 的输入方式与纯键盘/鼠标 AC 要求。
+- `templates/task-card.md`：新增“检查规则（按改动面选择）”表，要求逐批写启用/不适用及理由。
+- `templates/07-acceptance.md`：预期列说明补充 E1/R1/R2 的读数要求。
+
+### 变更
+
+- 规则来源：46 条历史缺陷纸面回测（R1 8、R2 9、R3 24、E1 9，并集 46/46）；E1 8/9 有归档旧/新证据；R1/R2/R3 有 2026-11-14 真实试运行数据。
+- E1/R1/R2 先以影子规则运行，不因缺失直接判失败；两批复盘达标后才升级为硬拦截。
+- 版本号 1.3.5 → 1.4.0；不新增文件，打包文件数不变。
+
+### 验证
+
+- `python3 scripts/selftest.py`：12/12 通过。
+- `python3 scripts/anti_examples.py`：58/58 夹具按预期。
+- `bash tests/init-selftest.sh`：6/6 通过。
+- `python3 scripts/check_coverage.py --selftest`：11/11 通过。
+- 五个示例账本 `check_evidence.py` 全部 exit 0。
+- `python3 scripts/package.py --check`：产品 25 / 30，资料 37 / 45，合计 62 / 80，708.6 KB；检查通过。
+
 本文件记录 verity 的对外变更。版本号遵循语义化版本（`MAJOR.MINOR.PATCH`），格式参考 Keep a Changelog。
 
 ## [v1.3.5] - 2026-11-14

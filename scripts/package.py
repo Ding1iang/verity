@@ -62,6 +62,8 @@ EXCLUDED_PATTERNS = ("*.local.*", "*.secret", "*.pem", "*.key")
 # 分析记录不是技能交付物：它引用外部仓库、体量大且会随调研变化，不进技能包。
 EXCLUDED_RELATIVE_PATTERNS = (
     "docs/2026-*外部工作流对比与优化清单.md",
+    "docs/2026-11-16-验收流程优化-目标与执行计划.md",
+    "docs/2026-11-16-验收流程优化/*",
     "docs/reviews/32-item-review*.md",
     "docs/reviews/32-item-verification*.md",
     "tests/fixtures/*",
