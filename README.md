@@ -21,7 +21,7 @@ verity 用任务卡先定靶，用证据分级判断结论能不能成立。v1 �
 三种用法，任选一种：
 
 1. **压缩包**：在仓库根目录执行 `python3 scripts/package.py --zip` 生成 `dist/verity.zip`（压缩包不提交到仓库，需要时重新生成），解压后进入 `verity/` 目录。
-2. **私有仓库**：`git clone <仓库地址> verity`，进入 `verity/`。仓库地址向仓库管理员索取，本文件不写死。
+2. **公开仓库**：`git clone https://github.com/Ding1iang/verity.git verity`，进入 `verity/`。
 3. **作为 AI 客户端技能**：把整个目录放进客户端约定的技能目录（例如 `~/.claude/skills/verity/`），入口是根目录的 `SKILL.md`。客户端不支持技能目录时，让代理先读 `SKILL.md` 即可。
 
 安装是否成功，按下一节第 1 步验证。
@@ -107,12 +107,12 @@ python3 scripts/package.py --check
 
 ### 可选：把完成线装成 pre-push
 
-在仓库根的 `.git/hooks/pre-push` 写入下面内容，并执行 `chmod +x .git/hooks/pre-push`；推送前会自动跑账本、覆盖、清单、范围锁和脱敏检查，任一失败就阻止推送。`--ledger` 要换成当前批次的账本，下面用历史自验收账本演示参数：
+在仓库根的 `.git/hooks/pre-push` 写入下面内容，并执行 `chmod +x .git/hooks/pre-push`；推送前会自动跑账本、覆盖、清单、范围锁和脱敏检查，任一失败就阻止推送。`--ledger` 要换成当前批次的账本，下面用示例四的账本演示参数：
 
 ```sh
 #!/bin/sh
 python3 scripts/verity.py gate --root . \
-  --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md \
+  --ledger examples/04-project-v1/07-验收回归清单.md \
   --adapter tests/fixtures/valid-adapter.json --run --team --release
 ```
 
@@ -184,8 +184,8 @@ verity/
 - **不绑定语言、框架和平台。** 示例用 Python 命令行只是为了能直接跑；规则本身与语言无关。
 - **示例是演示数据。** 示例中的版本号、测试读数和项目名不是真实项目记录，不能当作证据复用。
 - **一次交付一份 07。** 后续批次新建账本并引用旧批次，不覆盖历史；同一目录出现第二份 07 会被检查器判错。
-- **项目专属材料不进仓库。** 设备适配、真实数据、凭据、内部地址和具体项目结构都留在仓库之外，判断标准是“换个项目、换台机器还能用吗”。详见 `docs/design.md` 第 4 节。
-- **仓库在自验收通过前保持私有。** 自验收完成并复核通过后才考虑开源，详见 `docs/design.md` 第 5 节。
+- **项目专属材料不进技能包和公开示例。** 设备适配、真实数据、凭据、内部地址和具体项目结构只留在开发档案，是否公开由维护者确认；判断标准是“换个项目、换台机器还能用吗”。详见 `docs/design.md` 第 4 节。
+- **仓库按开源方式维护。** main 受保护，提交走 PR 和 CI；历史自验收记录只作存档，不代表当前版本。
 
 ## 相关文档
 

@@ -25,13 +25,13 @@ jobs:
         python-version: ["3.9", "3.12"]
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # 账本要校验证据提交是否为 HEAD 的祖先，浅克隆会让这类检查全部失败。
           fetch-depth: 0
 
       - name: 安装 Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -66,7 +66,7 @@ jobs:
           block = text[start:].split("```sh", 1)[1].split("```", 1)[0]
           # 双反斜杠保留 shell 续行符；Python 三引号会把单个反斜杠加换行折叠成空格。
           expected = """python3 scripts/verity.py gate --root . \\
-            --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md \\
+            --ledger examples/04-project-v1/07-验收回归清单.md \\
             --adapter tests/fixtures/valid-adapter.json --run --team --release"""
           assert expected in block, "README pre-push 命令已漂移"
           print("README pre-push 命令一致")
@@ -74,10 +74,6 @@ jobs:
 
       - name: 本地完成线门禁
         run: |
-          python3 scripts/verity.py gate \
-            --root . \
-            --ledger docs/reviews/2026-11-08-self-acceptance/07-验收回归清单.md \
-            --adapter tests/fixtures/valid-adapter.json --run --team --release
           python scripts/verity.py gate --selftest
           python scripts/verity.py gate --root . --ledger examples/04-project-v1/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run
           python scripts/verity.py gate --root . --ledger examples/05-release/07-验收回归清单.md --adapter tests/fixtures/valid-adapter.json --run
@@ -88,10 +84,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: 检查 Markdown 链接
-        uses: lycheeverse/lychee-action@v2
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: --verbose --no-progress --max-retries 2 --timeout 20 './**/*.md'
           fail: true
@@ -101,10 +97,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: 安装 Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 
@@ -118,7 +114,7 @@ jobs:
       GITLEAKS_VERSION: "8.30.1"
     steps:
       - name: 检出完整历史
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 

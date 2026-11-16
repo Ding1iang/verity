@@ -1,5 +1,36 @@
 # 更新日志
 
+## [v1.4.2] - 2026-11-16
+
+开源准备：公开安装口径、CI 门禁、社区协作与供应链固定项一次补齐；规则和检查器行为不变。
+
+### 新增
+
+- `CODE_OF_CONDUCT.md`：采用 Contributor Covenant 2.1 中文版，联系方式为 `@Ding1iang`。
+- `.github/pull_request_template.md`：PR 必须写清改了什么、为什么改、怎么验证。
+- `.github/dependabot.yml`：每周检查 GitHub Actions 依赖更新。
+
+### 变更
+
+- `.github/workflows/ci.yml`：完成线不再 gate 历史自验收账本，改为 gate 示例四、五；第三方 Action 固定到提交哈希（checkout v4.4.0、setup-python v5.6.0、lychee v2.9.0）。
+- `README.md`：安装从“私有仓库、向管理员索取”改为公开克隆地址；pre-push 示例改用示例四账本；开源维护口径同步。
+- `SECURITY.md`：支持范围从 v1.0.x 更新到 v1.4.x。
+- `CONTRIBUTING.md`：改为社区协作口径，补 PR 流程。
+- `docs/design.md`：区分“不进技能包和公开示例”与开发档案；移除“公开前保持私有”的旧表述。
+- `scripts/package.py`：社区文件不进入技能包，包内文件数不变。
+- 版本号 1.4.1 → 1.4.2。
+
+### 验证
+
+- `python3 scripts/selftest.py`：13/13 通过。
+- `python3 scripts/anti_examples.py`：58/58 夹具按预期。
+- `bash tests/init-selftest.sh`：6/6 通过。
+- `python3 scripts/check_coverage.py --selftest`：11/11 通过。
+- 五个示例账本 `check_evidence.py`：全部 exit 0。
+- `examples/04-project-v1`、`examples/05-release` 的 `verity.py gate ... --run`：各 5/5 通过。
+- `python3 scripts/verity.py gate --selftest`：正负对照全过。
+- `python3 scripts/package.py --check`：产品 25 / 30，资料 37 / 45，合计 62 / 80。
+
 ## [v1.4.1] - 2026-11-16
 
 修范围锁多路径解析与示例证据包清单过期：一格写多个路径不再误判越界，两个示例门禁恢复 5/5。
